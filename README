@@ -1,0 +1,37 @@
+These tools help to create translations for use by Localize-Me
+The dependencies are Python 3 with pycrypto.
+
+Localize-Me: https://github.com/L-Sherry/Localize-me
+
+These are currently incomplete, but you may already do the following:
+
+- Decrypt one or multiple pack files:
+(you may need to add --from-locale=de_DE if e.g. the translation is made from
+ the de_DE locale instead of the default en_US)
+
+./packfile.py --game-dir location/of/original/game decrapt encrapted_pack.json decrapted_pack.json
+or
+./packfile.py --game-dir location/of/original/game decrapt encrapted_pack_dir/ decrapted_pack_dir/
+
+- Encrypt (with weak crypto) one or multiple pack files.  This is optional,
+  but this is a way to not distribute the entire original copyrighted text
+  as part of your translation.
+
+./packfile.py --game-dir location/of/original/game encrapt my_pack.json encrapted.json
+or
+./packfile.py --game-dir location/of/original/game encrapt my_dir/ encrapted_dir/
+
+- Merge multiple pack files into one, for easier editing:
+
+./packfile merge my_pack_dir/ my_resulting_big_pack_file.json
+
+- Create a map file from a big pack file, so you can split a big pack file into
+  several, then actually split the big pack file
+
+./packfile.py --map-file my-map-file.json mkmap my_big_pack_file.json
+(you may customize my-map-file.json now...)
+./packfile.py --map-file my-map-file.json split my_big_pack_file.json output_directory
+
+- Diff two langfiles to create a pack file.
+  (This only work for lang files, i.e. files under data/lang/)
+./packfile.py difflang original/lang.en_US.json translated/lang.es_ES.json resulting_packfile.json
