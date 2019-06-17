@@ -46,7 +46,8 @@ def walk_langfile_json(json, lang):
         yield { lang: value }, dict_path, reverse_path
 
 def walk_files(base_path, sort = True):
-    for dirpath, subdirs, filenames in os.walk(base_path):
+    for dirpath, subdirs, filenames in os.walk(base_path, topdown=True):
+        subdirs.sort()
         for name in sorted(filenames) if sort else filenames:
             usable_path = os.path.join(dirpath, name)
             rel_path = os.path.relpath(usable_path, base_path)
