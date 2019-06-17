@@ -31,11 +31,11 @@ def walk_json_inner(json, dict_path = None, reverse_path = None):
         assert popped_k is k and popped_json is json
 
 def walk_json_for_langlabels(json, lang_to_check):
-    iterator = walk_json_inner(json, file_path)
+    iterator = walk_json_inner(json)
     for value, dict_path, reverse_path in iterator:
         if isinstance(value, dict) and lang_to_check in value:
             iterator.send(False)
-            yield value, dict_path, value, reverse_path
+            yield value, dict_path, reverse_path
 
 def walk_langfile_json(json, lang):
     for value, dict_path, reverse_path in walk_json_inner(json):
