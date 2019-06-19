@@ -15,6 +15,9 @@ def walk_json_inner(json, dict_path = None, reverse_path = None):
     if reverse_path is None:
         reverse_path = []
     if (yield json, dict_path, reverse_path) is False:
+        # This simplifies the callers, allowing them to not handle
+        # the return value of send()
+        yield None
         return
     if isinstance(json, dict):
         iterable = json.items() # not sorted
