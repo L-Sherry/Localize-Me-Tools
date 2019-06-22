@@ -372,7 +372,7 @@ def parse_args():
     difflang.set_defaults(func=do_diff_langfile)
 
     result = parser.parse_args()
-    print(vars(result))
+    #print(vars(result))
     result.func(result)
 
 
