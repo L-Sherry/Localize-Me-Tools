@@ -253,11 +253,11 @@ class CommandParser:
             if index == -1:
                 continue
             note = line[index + len(command):].strip()
-            if note:
-                ret["note"] = note
             ret["text"] = line[:index]
             if quality is not None:
                 ret["quality"] = quality
+            if note:
+                ret["note"] = note
             break
         else:
             ret["text"] = line
@@ -276,8 +276,8 @@ class CommandParser:
         for command, maybe_quality in cls.qualities_commands:
             if quality == maybe_quality:
                 if note:
-                    return "%s %s %s"%(trans["text"], command, note)
-                return "%s %s"%(trans["text"], command)
+                    return "%s%s %s"%(trans["text"], command, note)
+                return "%s%s"%(trans["text"], command)
         assert False, "unknown quality"
         return trans["text"]
 

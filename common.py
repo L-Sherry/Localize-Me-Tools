@@ -1,6 +1,6 @@
 #!/bin/echo This file is not meant to be executable:
 
-import os, os.path, json
+import os, os.path, json, sys
 
 load_json = lambda p: json.load(open(p, encoding="utf-8"))
 save_json_to_fd = lambda fd, v: json.dump(v, fd, indent=8,
@@ -8,6 +8,31 @@ save_json_to_fd = lambda fd, v: json.dump(v, fd, indent=8,
                                           ensure_ascii=False)
 
 save_json = lambda p, v: save_json_to_fd(open(p, 'w', encoding="utf-8"), v)
+
+if sys.version_info < (3,7):
+    # a note about dicts and load/save_json:
+    # Since Python 3.6, the CPython dict's new clever implementation comes with
+    # the guarantees that the order of iteration is the order of insertion.
+    # Python 3.7 explicitely state it in it's documentation.
+    print("""Your python version is TOO OLD: %s
+
+Please upgrade to Python 3.6 or later.  This program will still work, but the
+result will be unpredicable, which will cause problem when attempting to apply
+version control on the results or even when manually editing JSON files with
+another editor."""%sys.version, file=sys.stderr)
+
+def sort_dict(input_dict, recurse = False):
+    """Return a dict with the same content as input_dict, but sorted.
+
+    If recurse is true, then if the dict value is a dict, we also sort this
+    dict, recusively."""
+    res = {}
+    for k,v in sorted(input_dict.items(), key=lambda i:i[0]):
+        if recurse is True and isinstance(v, dict):
+            v = sort_dict(v, True)
+        res[k] = v
+    return res
+
 
 def walk_json_inner(json, dict_path = None, reverse_path = None):
     if dict_path is None:

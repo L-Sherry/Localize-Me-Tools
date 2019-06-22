@@ -221,8 +221,14 @@ def do_merge(args):
                 print("Multiple different value found for", s)
                 error = True
     if error:
-        print("Aborting...")
-        sys.exit(1)
+        if args.allow_mismatch:
+            print("Continuing anyway...")
+        else:
+            print("Aborting...")
+            sys.exit(1)
+    if args.sort:
+        big_result = common.sort_dict(big_result)
+
     common.save_json(args.bigpack, big_result)
 
 
@@ -335,6 +341,14 @@ def parse_args():
     add_inputpath(merge, metavar="<input dir>",
                   help="""Where to search for packfiles""")
     add_bigpack(merge, """Where to write the big packfile""")
+    merge.add_argument("--sort", dest="sort", action="store_true",
+                       help="""Sort the entries by ascending path when writing
+                               the output file""")
+    merge.add_argument("--allow-mismatch", dest="allow_mismatch",
+                       action="store_true", help="""If two input pack files
+                       possess different translation for the same string, then
+                       warn and pick the first encountered one.  The default is
+                       to abort in this case.""")
     merge.set_defaults(func=do_merge)
 
     difflang = subparsers.add_parser(
