@@ -82,7 +82,7 @@ class Encraption:
         if "reason" in trans_object: # was equivalent to 'note'
             raise ValueError("Throw out this old file, bro")
         note = trans_object.get('note')
-        if note is not None:
+        if note:
             ret["ciphernote"] = e.encrapt_text(note)
         return ret
 
@@ -130,9 +130,12 @@ def do_encrapt(args):
                 if orig_in_game is None:
                     print("Not encrapting stale translation at",
                           file_dict_path_str)
+                    print("true orig:", orig_in_game)
+                    print(" our orig:", orig_in_file)
                     error = True
                     continue
             result[file_dict_path_str] = Encraption.encrapt_trans(value)
+        result = common.sort_dict(result)
         common.save_json(output_file, result)
     if error:
         sys.exit(1)
