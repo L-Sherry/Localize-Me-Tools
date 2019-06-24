@@ -169,10 +169,10 @@ class Readliner:
         Readliner.complete_array = arr if arr.__class__ == list else list(arr)
 
     # TODO: should be able to choose the escapes chars
-    compose_re = re.compile('[$|](...)')
+    compose_re = re.compile('[$|](..)')
 
     @staticmethod
-    def set_compose_map(self, array_of_equalities):
+    def set_compose_map(array_of_equalities):
         result = {}
         for equality in array_of_equalities:
             chars, composed = equality.split('=', 1)
@@ -672,6 +672,7 @@ if __name__ == '__main__':
                              extra.get("unique_count")))
     if extra["count"]:
         count_or_debug(config, extra, pack)
+    readliner.set_compose_map(config.compose_chars)
 
     try:
         do_the_translating(config, pack, readliner)
