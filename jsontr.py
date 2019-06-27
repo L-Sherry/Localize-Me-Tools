@@ -68,7 +68,7 @@ class PackFile:
         # Index from orig to an object in self.translations
         self.translation_index = {}
         # Statistics about badnesses
-        self.quality_stats = {"bad":0, "incomplete":0, "unknown":0}
+        self.quality_stats = {"bad":0, "incomplete":0, "unknown":0, "wrong":0}
 
     def load(self, filename, on_each_text_load = lambda x: None):
         self.reset()
@@ -120,9 +120,10 @@ class PackFile:
                 return "%6i %s"%(count, label)
 
         ret = format_stat(strings, total_strings, "translations") + '\n'
-        desc = {"bad": "badly formulated/translated strings",
+        desc = {"unknown": "strings of unchecked quality",
+                "bad": "badly formulated/translated strings",
                 "incomplete": "strings with translated parts missing",
-                "unknown": "strings of unchecked quality"}
+                "wrong": "translations that changes the meaning significantly"}
         for qual, count in self.quality_stats.items():
             ret += "%6i %s(%s)\n"%(count, desc[qual], qual)
         ret += format_stat(uniques, total_uniques, "uniques")
@@ -238,6 +239,7 @@ class CircularBuffer:
 class CommandParser:
     qualities_commands = (
             ("/bad", "bad"),
+            ("/wro", "wrong"),
             ("/miss", "incomplete"),
             ("/unkn", "unknown"),
             ("/note", None)
@@ -581,9 +583,13 @@ def parse_args():
                                   'traditore/unkn' will indicate that it is
                                   unknown if 'traditore' is the correct
                                   translation, e.g. because the gender it
-                                  applies to is currently unknown. Adding
-                                  text after '/miss', '/bad', '/unkn' or
-                                  '/note' will add a note to the
+                                  applies to is currently unknown.
+                                  'Novemberfest/wro' will indicate that the
+                                  translation is wrong and does not match the
+                                  original text.
+                                  
+                                  Adding text after '/miss', '/bad', '/unkn'
+                                  or '/note' will add a note to the
                                   translation, maybe explaining why the
                                   mark is set.  e.g.
                                   "bolas/note needs to be gross"
