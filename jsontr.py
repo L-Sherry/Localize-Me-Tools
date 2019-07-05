@@ -778,8 +778,13 @@ def do_the_translating(config, pack, readliner):
                                                tags, known)
 
         origs = show_trans()
-        completion = set(word for orig in origs for word in orig.split(' '))
-        readliner.set_complete_array(completion)
+
+        words = set()
+        for orig in origs:
+            for word in orig.replace('\n', ' ').split(' '):
+                words.add(word)
+        readliner.set_complete_array(words)
+
         orig = lang_label[config.from_locale]
         if known:
             readliner.prefill_text(CommandParser.make_line_input(known))
