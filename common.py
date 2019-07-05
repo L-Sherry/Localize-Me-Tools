@@ -77,14 +77,14 @@ def walk_files(base_path, sort = True):
     for dirpath, subdirs, filenames in os.walk(base_path, topdown=True):
         subdirs.sort()
         for name in sorted(filenames) if sort else filenames:
+            if not name.endswith('.json'):
+                continue
             usable_path = os.path.join(dirpath, name)
             rel_path = os.path.relpath(usable_path, base_path)
             yield usable_path, rel_path
 
-def walk_assets_for_translatables(path, orig_lang,
+def walk_assets_for_translatables(base_path, orig_lang,
                                   path_filter = lambda x: True):
-    base_path = os.path.join(get_assets_path(path), "data")
-
     for usable_path, rel_path in walk_files(base_path):
         file_path = rel_path.split(os.sep)
         if not path_filter(file_path):

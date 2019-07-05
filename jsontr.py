@@ -109,6 +109,8 @@ class PackFile:
             return None
         return ret
 
+    get_all = lambda self: self.translations
+
     def get_stats(self, total_strings = None, total_uniques = None):
         strings = len(self.translations)
         uniques = len(self.translation_index)
@@ -284,6 +286,254 @@ class CommandParser:
         return trans["text"]
 
 
+class Checker:
+    def __init__(self, gamepath, lang, check_settings):
+        gamepath = common.get_assets_path(gamepath)
+        self.sparse_reader = common.sparse_dict_path_reader(gamepath, lang)
+        self.lang = lang
+
+        database_path = os.path.join(gamepath, "data/database.json")
+        self.database = common.load_json(database_path)
+        item_database_path = os.path.join(gamepath, "data/item-database.json")
+        self.item_database = common.load_json(item_database_path)
+
+        self.check_settings = check_settings
+        self.errors = 0
+
+    colors = {"normal":""}
+    if os.isatty(sys.stdout.fileno()):
+        # no termcap ... assume ANSI
+        colors = {
+            "red": "\033[31m",
+            "green": "\033[32m",
+            "yellow": "\033[33m",
+            # 34 is stark blue
+            "purple": "\033[35m",
+            "blue": "\033[36m", # light blue actually.
+            "normal": "\033[0m"
+        }
+
+    severities_text = {
+        "error": "%sErrors%s"%(colors.get("red",""), colors["normal"]),
+        "warn": "%sWarning%s"%(colors.get("yellow",""), colors["normal"]),
+        "notice": "%sNotice%s"%(colors.get("green",""), colors["normal"]),
+        "note": "%sNote%s"%(colors.get("blue",""), colors["normal"])
+    }
+
+    gamecolor = {
+        "0": "normal", "1": "red", "2":"green",
+        "3": "blue", # actually purple
+        "4": "purple", # actually gray
+        "5": "yellow", # actually orange
+    }
+
+    @staticmethod
+    def wrap_text(text, length, indentchar):
+        to_print = (text[i:i+length] for i in range(0, len(text), length))
+        return ("\n%s"%(indentchar)).join(to_print)
+
+    def print_error(self, file_dict_path_str, severity, error, text):
+        # sadly, we can't give line numbers...
+        print("%s: %s%s"%(self.severities_text.get(severity, severity),
+                         error, self.colors['normal']))
+        print("at %s"%(self.wrap_text(file_dict_path_str, 64, "\t\t")))
+        print("\t%s%s"%(self.wrap_text(text, 72, '\t'), self.colors["normal"]))
+        if severity == "error":
+            self.errors += 1
+
+    @staticmethod
+    def iterate_escapes(string):
+        last = 0
+        index = string.find('\\')
+        while index >= 0 and index < len(string):
+            next_index = yield (last, index)
+            if next_index is not None:
+                index = next_index
+                yield None
+            else:
+                index = index + 2 # skips the \ and the next char
+            last = index
+            index = string.find('\\', index)
+        yield (last, len(string))
+
+    TEXT="TEXT"
+    DELAY="DELAY"
+    ESCAPE="ESCAPE"
+    COLOR="COLOR"
+    SPEED="SPEED"
+    VARREF="VARREF"
+    ICON="ICON"
+
+    @classmethod
+    def lex_that_text(cls, text, warn_func):
+        iterator = cls.iterate_escapes(text)
+        last = 0
+        for last_index, index in iterator:
+            part = text[last_index:index]
+            if part:
+                yield cls.TEXT, part
+            char = text[index+1: index+2]
+
+            if char in '.!': # delaying commands
+                yield cls.DELAY, char
+            elif char == '\\':
+                yield cls.ESCAPE, char
+            elif char in 'csiv':
+                if text[index+2:index+3] != '[':
+                    warn_func("error", "'\\%s' not followed by '['"%char)
+                    continue
+                end = text.find(']', index+2)
+                if end == -1:
+                    warn_func("error", "'\\%s[' not finished"%char)
+                    continue
+                inner = text[index+3:end]
+                type_ = {'c':cls.COLOR, 's':cls.SPEED,
+                         'i': cls.ICON, 'v':cls.VARREF}[char]
+                yield type_, inner
+                iterator.send(end+1)
+            else:
+                warn_func("warn", "unknown escape '\\%s'"%char)
+
+
+    variables = [
+        ("lore.title.", "", "database", ["lore", "%s", "title"]),
+        ("item.", ".name", "item_database", ["items", "%i", "name"]),
+        # TODO: check
+        ("combat.name.", "", "database", ["enemies", "%s", "name"]),
+        ("area.", ".name", "database", ["areas", "%s", "name"]),
+    ]
+
+    def find_stuff_in_orig(self, orig, wanted_type):
+        """find variable references in the original, without warning"""
+        for type_, value in self.lex_that_text(orig, lambda a,b: None):
+            if type_ is wanted_type:
+                yield value
+
+    def lookup_var(self, name, warn_func, orig):
+
+        for prefix, suffix, file_, dict_path_template in self.variables:
+            if not name.startswith(prefix) or not name.endswith(suffix):
+                continue
+            name = name[len(prefix): len(name)-len(suffix)]
+            dict_path = []
+            for component in dict_path_template:
+                if component == "%s":
+                    dict_path.append(name.replace('/', '.'))
+                elif component == "%i":
+                    if not name.isdigit() or name[0:1] == '0':
+                        warn_func("error", "number '%s' is invalid"%name)
+                    dict_path.append(int(name))
+                else:
+                    dict_path.append(component)
+
+            text = common.get_data_by_dict_path(getattr(self, file_), dict_path)
+            if text is None:
+                warn_func("error",
+                          "variable reference '%s' is invalid: not found"%name)
+                return "(invalid)"
+
+            if isinstance(text, dict):
+                text = text.get(self.lang)
+            if not isinstance(text, str):
+                warn_func("error", "variable reference '%s' is not text"%name)
+                return "(invalid)"
+            return text
+
+        for maybevar in self.find_stuff_in_orig(orig, self.VARREF):
+            if maybevar == name:
+                return "(something)"
+
+        warn_func("warn", "unknown variable %s not in original"%name)
+        return "(error)"
+
+    def try_render_text(self, text, orig, warn_func):
+        """returns (final, printable with ansi)"""
+        result = ""
+        printable_result = ""
+        current_color = "0"
+        current_speed = "0"
+
+        for type_, value in self.lex_that_text(text, warn_func):
+            if type_ is self.TEXT:
+                result += value
+                printable_result += value
+            elif type_ is self.DELAY:
+                pass
+            elif type_ is self.ESCAPE:
+                warn_func("notice", "\\ present in text, is this intended ?")
+            elif type_ is self.COLOR:
+                actual_color = self.gamecolor.get(value)
+                if actual_color is None:
+                    warn_func("error", "bad \c[] command")
+                    continue
+                if value == current_color:
+                    warn_func("warn", "same color assigned twice")
+                current_color = value
+                printable_result += self.colors.get(actual_color, "")
+            elif type_ is self.SPEED:
+                if len(value) != 1 or value not in "12345678":
+                    warn_func("error", "bad \s[] command")
+                    continue
+                if result:
+                    warn_func("notice", "speed not at start of text, unusal")
+                if current_speed == value:
+                    warn_func("warn", "same speed specified twice")
+                current_speed = value
+            elif type_ is self.ICON:
+                if value not in self.find_stuff_in_orig(orig, self.ICON):
+                    warn_func("notice", "icon not present in original text")
+                result+='[]'
+                printable_result+='←'
+            elif type_ is self.VARREF:
+                value = self.lookup_var(value, warn_func, orig)
+                printable_result += value
+                result += value
+            else:
+                assert False
+        if current_color != "0":
+            warn_func("notice", "color does not end with 0")
+        return (result, printable_result)
+
+    def check_text(self, file_dict_path_str, text, orig):
+        # it would be great if we had the tags here.
+        def print_please(severity, error):
+            self.print_error(file_dict_path_str, severity, error, text)
+
+        # that's the only test we are doing for now
+        self.try_render_text(text, orig, print_please)
+
+    def check_pack(self, pack, from_locale):
+        for file_dict_path_str, trans in pack.get_all().items():
+            text = trans.get("text")
+            if not text:
+                if "ciphertext" in trans:
+                    self.print_error(file_dict_path_str, "notice",
+                                     "encrypted entries not supported", "")
+                else:
+                    self.print_error(file_dict_path_str, "error",
+                                     "entry has no translation", "")
+                continue
+            true_orig = self.sparse_reader.get_str(file_dict_path_str)
+            orig = trans.get("orig")
+            if true_orig is None:
+                self.print_error(file_dict_path_str, "warn",
+                                 "translation is stale: does not exist anymore",
+                                 text)
+                continue
+            elif orig is not None and true_orig != orig:
+                self.print_error(file_dict_path_str, "warn",
+                                 "translation is stale: original text differs",
+                                 text)
+            self.check_text(file_dict_path_str, text, true_orig)
+
+    def check_assets(self, assets_path, from_locale):
+        it = common.walk_assets_for_translatables(assets_path, from_locale)
+        for langlabel, (file_path, dict_path), _ in it:
+            orig = langlabel[from_locale]
+            file_dict_path_str = common.serialize_dict_path(file_path,
+                                                            dict_path)
+            self.check_text(file_dict_path_str, orig, orig)
+
 class Configuration:
     def __init__(self):
         self.reset()
@@ -443,7 +693,8 @@ class Configuration:
 
     def iterate_over_filtered(self, packfile, assets_path):
         filter_ = self.filter_file_path_func
-        iterable = common.walk_assets_for_translatables(assets_path,
+        dirpath = os.path.join(common.get_assets_path(assets_path), "data")
+        iterable = common.walk_assets_for_translatables(dirpath,
                                                         self.from_locale,
                                                         filter_)
         for lang_label, (file_path, dict_path), reverse_path in iterable:
@@ -540,7 +791,7 @@ def do_the_translating(config, pack, readliner):
         if result["text"]:
             pack.add_translation(file_dict_path_str, orig, result)
 
-    
+
 
 def parse_args():
     import argparse
@@ -587,7 +838,7 @@ def parse_args():
                                   'Novemberfest/wro' will indicate that the
                                   translation is wrong and does not match the
                                   original text.
-                                  
+
                                   Adding text after '/miss', '/bad', '/unkn'
                                   or '/note' will add a note to the
                                   translation, maybe explaining why the
@@ -615,6 +866,16 @@ def parse_args():
                        help="""Enable various debugging output that may be
                                helpful to debug the lang label finder""")
 
+    check = subparser.add_parser("check", help="""Check the translations for
+                                 various errors""")
+    check.add_argument("--asset-path", dest="assetpath",
+                       metavar="<file or directory>",
+                       help="""Instead of checking the file specified by
+                       --pack-file, check this directory of assets.  This can
+                       be used against the game files or some mods's asset.
+                       Not everything can be checked in this mode""")
+    check.set_defaults(check=True)
+
 
     result = parser.parse_args()
     if "save_config" in result:
@@ -629,6 +890,9 @@ def parse_args():
         if key in ("total_count", "unique_count"):
             extra[key] = int(value)
             return True
+        if key in ("check",):
+            extra[key] = value
+            return True
         return False
 
     if os.path.exists(result.config_file):
@@ -638,6 +902,8 @@ def parse_args():
 
     extra["count"] = "count" in result
     extra["debug"] = vars(result).get("debug", False)
+    extra["check"] = "check" in result
+    extra["check-asset-path"] = vars(result).get("assetpath")
     return config, extra
 
 def count_or_debug(config, extra, pack):
@@ -662,7 +928,7 @@ if __name__ == '__main__':
     config, extra = parse_args()
     pack = PackFile()
     readliner = Readliner()
-    if os.path.exists(config.packfile):
+    if os.path.exists(config.packfile) and not extra["check-asset-path"]:
         history = CircularBuffer(100)
         if readliner.has_history_support():
             add_to_history = history.append
@@ -678,6 +944,14 @@ if __name__ == '__main__':
                              extra.get("unique_count")))
     if extra["count"]:
         count_or_debug(config, extra, pack)
+    if extra["check"]:
+        checker = Checker(config.gamedir, config.from_locale, "FIXME")
+        if extra["check-asset-path"]:
+            checker.check_assets(extra["check-asset-path"], config.from_locale)
+        else:
+            checker.check_pack(pack, config.from_locale)
+        sys.exit(1 if checker.errors else 0)
+
     readliner.set_compose_map(config.compose_chars)
 
     try:
