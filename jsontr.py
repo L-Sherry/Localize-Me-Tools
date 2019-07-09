@@ -451,7 +451,7 @@ class Checker:
         result = ""
         printable_result = ""
         current_color = "0"
-        current_speed = "0"
+        current_speed = "-1" # it depends.
 
         for type_, value in self.lex_that_text(text, warn_func):
             if type_ is self.TEXT:
@@ -471,7 +471,7 @@ class Checker:
                 current_color = value
                 printable_result += self.colors.get(actual_color, "")
             elif type_ is self.SPEED:
-                if len(value) != 1 or value not in "12345678":
+                if len(value) != 1 or value not in "01234567":
                     warn_func("error", "bad \s[] command")
                     continue
                 if result:
