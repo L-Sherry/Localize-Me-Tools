@@ -248,7 +248,6 @@ class CommandParser:
     )
     @classmethod
     def parse_line_input(cls, line):
-        # Allow the user to use \n for newlines (some translations require this)
         ret = {}
         note = None
         quality = None
@@ -265,6 +264,8 @@ class CommandParser:
             break
         else:
             ret["text"] = line
+        # Allow the user to use \n for newlines (some translations require this)
+        ret["text"] = ret["text"].replace('\\n', '\n')
         return ret
 
     @classmethod
@@ -275,6 +276,7 @@ class CommandParser:
         """
         quality = trans.get("quality")
         note = trans.get("note")
+        text = trans["text"].replace('\n','\\n')
         if quality is None and note is None:
             return trans["text"]
         for command, maybe_quality in cls.qualities_commands:
