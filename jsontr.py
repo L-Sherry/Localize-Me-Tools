@@ -319,7 +319,7 @@ class Checker:
         }
 
     severities_text = {
-        "error": "%sErrors%s"%(colors.get("red",""), colors["normal"]),
+        "error": "%sError%s"%(colors.get("red",""), colors["normal"]),
         "warn": "%sWarning%s"%(colors.get("yellow",""), colors["normal"]),
         "notice": "%sNotice%s"%(colors.get("green",""), colors["normal"]),
         "note": "%sNote%s"%(colors.get("blue",""), colors["normal"])
@@ -399,6 +399,11 @@ class Checker:
             else:
                 warn_func("warn", "unknown escape '\\%s'"%char)
 
+    @staticmethod
+    def check_number(text, warn_func):
+        if not text.isdigit():
+            warn_func("error", "'%s' is not a number"%text)
+        return text
 
     variables = [
         ("lore.title.", "", "database", ["lore", "%s", "title"]),
@@ -406,6 +411,7 @@ class Checker:
         # TODO: check
         ("combat.name.", "", "database", ["enemies", "%s", "name"]),
         ("area.", ".name", "database", ["areas", "%s", "name"]),
+        ("misc.localNum.", "", check_number.__func__, [])
     ]
 
     def find_stuff_in_orig(self, orig, wanted_type):
@@ -420,6 +426,10 @@ class Checker:
             if not name.startswith(prefix) or not name.endswith(suffix):
                 continue
             name = name[len(prefix): len(name)-len(suffix)]
+
+            if callable(file_):
+                return file_(name, warn_func)
+
             dict_path = []
             for component in dict_path_template:
                 if component == "%s":
