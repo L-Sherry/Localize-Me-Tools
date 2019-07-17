@@ -18,6 +18,9 @@ def find_tags(file_path, dict_path, previous):
             tags.append("lore-%s" % previous[2]["category"].lower())
             tags.append("lore-%s"%dict_path[-1])
             return tags
+        if dict_path[0] == "quests":
+            tags.append("quests-%s"%dict_path[-1])
+            tags.append("quests-%s"%previous[2].get("area"))
         elif dict_path[0] != "commonEvents":
             tags.append("%s-%s"%(dict_path[0], dict_path[-1]))
             return tags
