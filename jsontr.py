@@ -583,6 +583,7 @@ class Configuration:
             "filter_tags": [],
             "ignore_known": True,
             "ignore_unknown": False,
+            "allow_empty": False,
             "editor": os.getenv("EDITOR") or "",
             "packfile": ""
     }
@@ -653,6 +654,13 @@ class Configuration:
                             texts. This option is disabled by default.
                             Note that stale translations are always displayed,
                             regardless of the value of this option""")
+        parser.add_argument("--no-allow-empty", dest="allow_empty",
+                            action="store_false", help="")
+        parser.add_argument("--allow-empty", dest="allow_empty",
+                            action="store_true", help="""Allow empty
+                            translations.  By default, if a translated text
+                            is empty, it is not stored.  This option allows
+                            to translate something as an empty text.""")
         parser.add_argument("--editor", dest="editor",
                             metavar="<editor program>", help="""Editor to use
                             when using ":e".  If not specified, then the EDITOR
@@ -808,8 +816,9 @@ def do_the_translating(config, pack, readliner):
             if dup:
                 readliner.prefill_text(CommandParser.make_line_input(dup))
         result = ask_for_translation(config, pack, show_trans)
-        if result["text"]:
-            pack.add_translation(file_dict_path_str, orig, result)
+        if not result["text"] and not config.allow_empty:
+            continue
+        pack.add_translation(file_dict_path_str, orig, result)
 
 
 
