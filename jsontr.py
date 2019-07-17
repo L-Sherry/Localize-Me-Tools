@@ -765,15 +765,19 @@ def spawn_editor(editor, pack, filename):
         print("No editor configured")
         return
     pack.save(config.packfile)
-    for _ in range(100):
+    while True:
         os.system("%s %s"%(config.editor, config.packfile))
         try:
             # not touching the history here, this is intentionnal, it gets
             # confusing otherwise.
             pack.load(config.packfile)
             return
-        except:
-            pass
+        except Exception as e:
+            print(e)
+            line = input("Press enter to reedit, or :q! to quit")
+            if line.strip() == ':q!':
+                sys.exit(1)
+            continue
 
 
 def ask_for_translation(config, pack, show_trans):
