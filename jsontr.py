@@ -519,15 +519,6 @@ class Checker:
 
     def check_pack(self, pack, from_locale):
         for file_dict_path_str, trans in pack.get_all().items():
-            text = trans.get("text")
-            if not text:
-                if "ciphertext" in trans:
-                    self.print_error(file_dict_path_str, "notice",
-                                     "encrypted entries not supported", "")
-                else:
-                    self.print_error(file_dict_path_str, "error",
-                                     "entry has no translation", "")
-                continue
             true_orig = self.sparse_reader.get_str(file_dict_path_str)
             orig = trans.get("orig")
             if true_orig is None:
@@ -539,6 +530,16 @@ class Checker:
                 self.print_error(file_dict_path_str, "warn",
                                  "translation is stale: original text differs",
                                  text)
+            text = trans.get("text")
+            if not text:
+                if "ciphertext" in trans:
+                    self.print_error(file_dict_path_str, "notice",
+                                     "encrypted entries not supported", "")
+                elif true_orig:
+                    self.print_error(file_dict_path_str, "error",
+                                     "entry has no translation", "")
+                continue
+
             self.check_text(file_dict_path_str, text, true_orig)
 
     def check_assets(self, assets_path, from_locale):
