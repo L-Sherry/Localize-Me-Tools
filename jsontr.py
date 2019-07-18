@@ -671,7 +671,8 @@ class Configuration:
                             metavar="<pack file>",
                             help="""Pack file to create/edit/update. Required
                             """)
-        parser.set_defaults(ignore_unknown=None, ignore_known=None)
+        parser.set_defaults(ignore_unknown=None, ignore_known=None,
+                            allow_empty=False)
     def update_with_argparse_result(self, result):
         for key in self.default_options.keys():
             value = getattr(result, key)
