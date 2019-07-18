@@ -739,26 +739,27 @@ class Configuration:
 
             yield path_str, lang_label, known, tags
 
-    def show_trans(self, file_dict_path_str, lang_label, tags, known):
-        """Show the stuff to translate.
+    def get_trans_to_show(self, file_dict_path_str, lang_label, tags, known):
+        """Return a (string, list<string>) containing stuff to translate.
 
-        Return an array with the translations presented.
-        """
-        print("%s\ntags: %s"%(file_dict_path_str, " ".join(tags)))
-        ret = []
+        The first one is what to show to the user, the second one is a list
+        of original texts contained in the first one."""
+
+        string = "%s\ntags: %s\n"%(file_dict_path_str, " ".join(tags))
+        texts = []
         if known:
             our_orig = known.get('orig')
             if our_orig and our_orig != lang_label[self.from_locale]:
-                print("our:%s"%known['orig'])
+                string += "our:%s\n"%known['orig']
 
         for locale in self.show_locales:
             text = lang_label.get(locale)
             if text is None:
-                print("no", locale)
+                string += "no %s\n"%locale
             else:
-                ret.append(text)
-                print("%s:"%locale[:2], text)
-        return ret
+                texts.append(text)
+                string += "%s: %s\n"%(locale[:2], text)
+        return string, texts
 
 
 def spawn_editor(editor, pack, filename):
@@ -781,9 +782,10 @@ def spawn_editor(editor, pack, filename):
             continue
 
 
-def ask_for_translation(config, pack, show_trans):
+def ask_for_translation(config, pack, to_show):
+    prompt = to_show + "> "
     while True:
-        line = input("> ")
+        line = input(prompt)
         stripped = line.strip()
         if stripped == ":w":
             pack.save(config.packfile)
@@ -791,10 +793,8 @@ def ask_for_translation(config, pack, show_trans):
             raise KeyboardInterrupt()
         elif stripped == ':e':
             spawn_editor(config.editor, pack, config.packfile)
-            show_trans()
         elif stripped == ':s':
             print(pack.get_stats())
-            show_trans()
         else:
             break
     return CommandParser.parse_line_input(line)
@@ -803,10 +803,8 @@ def ask_for_translation(config, pack, show_trans):
 def do_the_translating(config, pack, readliner):
     iterator = config.iterate_over_filtered(pack, config.gamedir)
     for file_dict_path_str, lang_label, known, tags in iterator:
-        show_trans = lambda: config.show_trans(file_dict_path_str, lang_label,
-                                               tags, known)
-
-        origs = show_trans()
+        to_show, origs = config.get_trans_to_show(file_dict_path_str,
+                                                  lang_label, tags, known)
 
         words = set()
         for orig in origs:
@@ -821,7 +819,7 @@ def do_the_translating(config, pack, readliner):
             dup = pack.get_by_orig(orig)
             if dup:
                 readliner.prefill_text(CommandParser.make_line_input(dup))
-        result = ask_for_translation(config, pack, show_trans)
+        result = ask_for_translation(config, pack, to_show)
         if not result["text"] and not config.allow_empty:
             continue
         pack.add_translation(file_dict_path_str, orig, result)
