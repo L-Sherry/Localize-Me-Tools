@@ -114,7 +114,7 @@ class PackFile:
 
     get_all = lambda self: self.translations
 
-    def get_stats(self, total_strings = None, total_uniques = None):
+    def get_stats(self, config):
         strings = len(self.translations)
         uniques = len(self.translation_index)
         def format_stat(count, out_of, label):
@@ -124,14 +124,14 @@ class PackFile:
             else:
                 return "%6i %s"%(count, label)
 
-        ret = format_stat(strings, total_strings, "translations") + '\n'
+        ret = format_stat(strings, config.total_count, "translations") + '\n'
         desc = {"unknown": "strings of unchecked quality",
                 "bad": "badly formulated/translated strings",
                 "incomplete": "strings with translated parts missing",
                 "wrong": "translations that changes the meaning significantly"}
         for qual, count in self.quality_stats.items():
             ret += "%6i %s(%s)\n"%(count, desc[qual], qual)
-        ret += format_stat(uniques, total_uniques, "uniques")
+        ret += format_stat(uniques, config.unique_count, "uniques")
         return ret
 
 class Readliner:
@@ -586,7 +586,9 @@ class Configuration:
             "ignore_unknown": False,
             "allow_empty": False,
             "editor": os.getenv("EDITOR") or "",
-            "packfile": ""
+            "packfile": "",
+            "total_count": 0,
+            "unique_count": 0
     }
 
     def add_options_to_argparser(self, parser):
@@ -672,7 +674,8 @@ class Configuration:
                             help="""Pack file to create/edit/update. Required
                             """)
         parser.set_defaults(ignore_unknown=None, ignore_known=None,
-                            allow_empty=False)
+                            allow_empty=False, total_count = None,
+                            unique_count = None)
     def update_with_argparse_result(self, result):
         for key in self.default_options.keys():
             value = getattr(result, key)
@@ -794,7 +797,7 @@ def ask_for_translation(config, pack, to_show):
         elif stripped == ':e':
             spawn_editor(config.editor, pack, config.packfile)
         elif stripped == ':s':
-            print(pack.get_stats())
+            print(pack.get_stats(config))
         else:
             break
     return CommandParser.parse_line_input(line)
@@ -920,9 +923,6 @@ def parse_args():
 
     extra = {}
     def put_some_in_extra(key, value):
-        if key in ("total_count", "unique_count"):
-            extra[key] = int(value)
-            return True
         if key in ("check",):
             extra[key] = value
             return True
@@ -973,8 +973,7 @@ if __name__ == '__main__':
             readliner.add_history(CommandParser.make_line_input(entry))
         del history
         print("loaded", config.packfile)
-        print(pack.get_stats(extra.get("total_count"),
-                             extra.get("unique_count")))
+        print(pack.get_stats(config))
     if extra["count"]:
         count_or_debug(config, extra, pack)
     if extra["check"]:
