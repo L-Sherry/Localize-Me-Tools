@@ -50,13 +50,14 @@ def walk_json_inner(json, dict_path = None, reverse_path = None):
         iterable = ((str(i), value) for i,value in enumerate(json))
     else:
         return
+    reverse_path.append(json)
     for k,v in iterable:
         dict_path.append(k)
-        reverse_path.append(json)
         yield from walk_json_inner(v, dict_path, reverse_path)
         popped_k = dict_path.pop()
-        popped_json = reverse_path.pop()
-        assert popped_k is k and popped_json is json
+        assert popped_k is k
+    popped_json = reverse_path.pop()
+    assert popped_json is json
 
 def walk_json_for_langlabels(json, lang_to_check):
     iterator = walk_json_inner(json)
@@ -99,8 +100,11 @@ def walk_assets_for_translatables(base_path, orig_lang,
         for value, dict_path, reverse_path in iterable:
             yield value, (file_path, dict_path), reverse_path
 
-def get_data_by_dict_path(json, dict_path):
+def get_data_by_dict_path(json, dict_path, include_reverse=False):
+    reverse_path = []
     for component in dict_path:
+        if include_reverse:
+            reverse_path.append(json)
         if isinstance(json, list):
             try:
                 json = json[int(component)]
@@ -110,11 +114,13 @@ def get_data_by_dict_path(json, dict_path):
             json = json.get(component)
             if json is None:
                 return None
+    if include_reverse:
+        return json, reverse_path
     return json
 
 
 def serialize_dict_path(file_path, dict_path):
-    # FIXME: we need a better encoding maybe.
+    # FIXME: we need a better encoding maybe. Look for RFC 6901
     # eg: escape / in keys with \, escape \ with \ as well, and find
     # a way to handle json files not having a .json extension.
     assert file_path[-1][-5:] == ".json"
@@ -139,7 +145,7 @@ def get_assets_path(path):
         if os.path.isdir(maybe):
             return maybe
         else:
-            raise ValueError("could not find game assets." 
+            raise ValueError("could not find game assets."
                              " Searched in %s and %s/assets"%(path, path))
     else:
         return path + ("%s.."%os.sep) * (len(realsplit) - index - 1)
@@ -151,17 +157,36 @@ class sparse_dict_path_reader:
         self.last_data = None
         self.lang = lang
 
-    def get(self, file_path, dict_path):
-        if self.last_loaded != file_path:
-            usable_path = os.path.join(self.base_path, os.sep.join(file_path))
-            try:
-                self.last_data = load_json(usable_path)
-            except Exception as e:
-                print("Cannot find game file:", "/".join(file_path), ':',
-                      str(e))
-                self.last_data = {}
-            self.last_loaded = file_path
+    def load_file(self, file_path):
+        if self.last_loaded == file_path:
+            return
+        usable_path = os.path.join(self.base_path, os.sep.join(file_path))
+        try:
+            self.last_data = load_json(usable_path)
+        except Exception as e:
+            print("Cannot find game file:", "/".join(file_path), ':', str(e))
+            self.last_data = {}
+        self.last_loaded = file_path
 
+    def get_complete(self, file_path, dict_path):
+        """return complete data given a file_path/dict_path
+
+        return something with the same format as
+        walk_assets_for_translatables(), note that first return may be None"""
+        self.load_file(file_path)
+        ret, reverse = get_data_by_dict_path(self.last_data, dict_path,
+                                             include_reverse=True)
+        if file_path[0] == 'lang' and ret is not None:
+            ret = { self.lang: ret }
+        return (ret, (file_path, dict_path), reverse)
+
+
+    def get_complete_by_str(self, file_dict_path_str):
+        file_path, dict_path = unserialize_dict_path(file_dict_path_str)
+        return self.get_complete(file_path, dict_path)
+
+    def get(self, file_path, dict_path):
+        self.load_file(file_path)
         ret = get_data_by_dict_path(self.last_data, dict_path)
         if file_path[0] != "lang" and ret is not None:
             assert isinstance(ret, dict)
@@ -169,10 +194,7 @@ class sparse_dict_path_reader:
         return ret
 
     def get_str(self, file_dict_path_str):
-        file_path, dict_path = unserialize_dict_path(file_dict_path_str)
-        return self.get(file_path, dict_path)
-
-
+        return self.get(*unserialize_dict_path(file_dict_path_str))
 
 def transform_file_or_dir(input_path, output_path):
     """Browse all files in input_file and transform them into output_path.

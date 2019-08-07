@@ -62,6 +62,33 @@ def find_tags(file_path, dict_path, previous):
 
     return tags
 
+box_types_by_tags = {
+        # quest descriptions in hub menu (exact)
+        "quests-location": ('small', 'vbox', 238, 2),
+        # approximation for item names (142 comes often, but includes the icon)
+        # starts at 116, stops at 122, we really need the space, so ... 122.
+        "item-name": ("normal", "hbox", 122, 1),
+        # approximation for item description
+        # having buffs can incuur a 90px penalty.
+        "item-description": ("normal", "hbox", 558, 1),
+
+        # status descriptions could be 290 in status menu
+
+        # subtasks in quest menu are 220 max
+        "quests-text": ("small", "hbox", 220, 1),
+        # quest descriptions are 254 max, 4 lines.
+        "quests-description": ("small", "vbox", 254, 4),
+
+        # side msgs are 202 confirmed, max 5 lines, and that's a lot already
+        "side": ("normal", "vbox", 202, 5)
+}
+def get_box_by_tags(tags):
+    for tag in tags:
+        a = box_types_by_tags.get(tag)
+        if a is not None:
+            return a
+    return None
+
 class PackFile:
     def __init__(self):
         self.reset()
@@ -229,13 +256,19 @@ class Checker:
         self.sparse_reader = common.sparse_dict_path_reader(gamepath, lang)
         self.lang = lang
 
-        database_path = os.path.join(gamepath, "data/database.json")
-        self.database = common.load_json(database_path)
-        item_database_path = os.path.join(gamepath, "data/item-database.json")
-        self.item_database = common.load_json(item_database_path)
-
-        self.check_settings = check_settings
         self.errors = 0
+        self.parse_options(check_settings)
+
+    def parse_options(self, settings):
+        self.char_metrics = {}
+        for fonttype, values in settings.get("metrics", {}).items():
+            metrics = {}
+            self.char_metrics[fonttype] = metrics
+            for i, size in enumerate(values.get("metrics", ())):
+                if size > 0:
+                    metrics[chr(i+32)] = size
+
+            metrics.update(values.get("extra_metrics", {}))
 
     colors = {"normal":""}
     if os.isatty(sys.stdout.fileno()):
@@ -407,14 +440,12 @@ class Checker:
                 else:
                     dict_path.append(component)
 
-            text = common.get_data_by_dict_path(getattr(self, file_), dict_path)
+            text = get_text(file_path, dict_path, warn_func)
             if text is None:
                 warn_func("error",
                           "variable reference '%s' is invalid: not found"%name)
                 return "(invalid)"
 
-            if isinstance(text, dict):
-                text = text.get(self.lang)
             if not isinstance(text, str):
                 warn_func("error", "variable reference '%s' is not text"%name)
                 return "(invalid)"
@@ -528,6 +559,65 @@ class Checker:
             ret += size
         return ret
 
+    def wrap_text(self, words, metrics, boxtype):
+        spacesize = metrics.get(' ')
+        width_limit = 999999 if boxtype[1] == "hbox" else boxtype[2]
+
+        lines=[]
+        current_line = RenderedText()
+
+        for word in words:
+            has_space = bool(current_line.size)
+            newsize = (current_line.size + word.size
+                       + (spacesize if has_space else 0))
+            if newsize > width_limit:
+                lines.append(current_line)
+                current_line = RenderedText()
+                newsize = word.size
+            else:
+                current_line.add_plain_text(" ")
+
+            current_line.ansi += word.ansi
+            current_line.plain += word.plain
+            current_line.size = newsize
+            if word.space == '\n':
+                lines.append(current_line)
+                current_line = RenderedText()
+        lines.append(current_line)
+        return lines
+
+    def check_boxes(self, lines, boxtype, metrics, warn_func):
+        if len(lines) > boxtype[3]:
+            warn_func("error", "Overfull %s: too many lines"%boxtype[1],
+                      "\n".join(l.ansi for l in lines))
+
+        maxsize = 0
+        maxindex = None
+        for index, line in enumerate(lines):
+            maxsize = max(maxsize, line.size)
+            if maxsize == line.size:
+                maxindex = index
+
+        if maxsize > boxtype[2]:
+            assert boxtype[2]
+            # Figure out where the cut is
+            bigline = lines[maxindex].plain
+            indication = None
+            for charsize in range(len(bigline), 1, -1):
+                trimedsize = self.calc_string_size(bigline[:charsize], metrics,
+                                                   lambda *l:None)
+
+                if trimedsize < maxsize:
+                    indication = bigline[:charsize] + '[]' + bigline[charsize:]
+                    break
+
+            warn_func("error",
+                      "Overfull %s: %dpx too large"%(boxtype[1],
+                                                     maxsize - boxtype[2]),
+                      indication)
+
+
+
     def check_text(self, file_path, dict_path, text, orig, tags, get_text):
         # it would be great if we had the tags here.
         def print_please(severity, error, display_text = text):
@@ -535,16 +625,53 @@ class Checker:
                                                             dict_path)
             self.print_error(file_dict_path_str, severity, error, display_text)
 
+        boxtype = get_box_by_tags(tags)
+        metrics = None
+        if boxtype is not None:
+            metrics = self.char_metrics.get(boxtype[0])
+
         generator = self.render_text(text, orig, print_please, get_text)
+        if metrics is None:
+            # consume the generator, consume it so it checks stuff
+            list(generator)
+            return
 
         words = self.get_words(generator)
         for word in words:
             word.size = self.calc_string_size(word.plain, metrics, print_please)
+        lines = self.wrap_text(words, metrics, boxtype)
+        self.check_boxes(lines, boxtype, metrics, print_please)
+
 
 
     def check_pack(self, pack, from_locale):
+
+        def get_text(file_path, dict_path, warn_func):
+            file_dict_path_str = common.serialize_dict_path(file_path,
+                                                            dict_path)
+
+            orig = self.sparse_reader.get(file_path, dict_path)
+            if orig is None:
+                return None
+            trans = pack.get(file_dict_path_str, orig)
+            if trans is not None:
+                return trans['text']
+            else:
+                warn_func("notice",
+                          "referenced path '%s' not translated yet"%(
+                              file_dict_path_str))
+                return orig
+
+
         for file_dict_path_str, trans in pack.get_all().items():
-            true_orig = self.sparse_reader.get_str(file_dict_path_str)
+            comp = self.sparse_reader.get_complete_by_str(file_dict_path_str)
+            orig_langlabel, (file_path, dict_path), reverse_path = comp
+            tags = find_tags(file_path, dict_path, reverse_path)
+
+            if orig_langlabel is None:
+                orig_langlabel = {}
+
+            true_orig = orig_langlabel.get(self.sparse_reader.lang)
             orig = trans.get("orig")
             if true_orig is None:
                 self.print_error(file_dict_path_str, "warn",
@@ -565,15 +692,16 @@ class Checker:
                                      "entry has no translation", "")
                 continue
 
-            self.check_text(file_dict_path_str, text, true_orig)
+            self.check_text(file_path, dict_path, text, true_orig, tags,
+                            get_text)
 
     def check_assets(self, assets_path, from_locale):
         it = common.walk_assets_for_translatables(assets_path, from_locale)
-        for langlabel, (file_path, dict_path), _ in it:
+        get_text = lambda f, d, warn_func: self.sparse_reader.get(f, d)
+        for langlabel, (file_path, dict_path), reverse_path in it:
             orig = langlabel[from_locale]
-            file_dict_path_str = common.serialize_dict_path(file_path,
-                                                            dict_path)
-            self.check_text(file_dict_path_str, orig, orig)
+            tags = find_tags(file_path, dict_path, reverse_path)
+            self.check_text(file_path, dict_path, orig, orig, tags, get_text)
 
 class Configuration:
     def __init__(self):
