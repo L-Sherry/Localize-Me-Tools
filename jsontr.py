@@ -275,6 +275,34 @@ class Checker:
                     metrics[chr(i+32)] = size
 
             metrics.update(values.get("extra_metrics", {}))
+        self.replacements = []
+
+        make_repl = lambda regex, repl: (lambda s: regex.sub(repl, s))
+        for subst_regex in settings.get("replacements",()):
+            if len(subst_regex) < len('s///'):
+                raise ValueError(
+                        "substution '%s' too short"%repr(substr_regex))
+            splitted = subst_regex.split(subst_regex[1])
+            if len(splitted) != 4 or splitted[0] != 's' or splitted[3]:
+                raise ValueError(
+                        "substitution '%s' has invalid syntax"%( subst_regex))
+            try:
+                replace_func = make_repl(re.compile(splitted[1]), splitted[2])
+                replace_func("this is a test of your regex: œ")
+            except:
+                raise ValueError("regex substitution '%s' failed"%subst_regex)
+            else:
+                self.replacements.append(replace_func)
+
+        self.to_flag = []
+        make_matcher = lambda regex: (lambda s:regex.search(s) is not None)
+        for name, to_flag in settings.get("badnesses",{}).items():
+            try:
+                regex = re.compile(to_flag)
+            except:
+                raise ValueError("badness regex '%s' failed"%to_flag)
+            self.to_flag.append((name, make_matcher(regex)))
+
 
     colors = {"normal":""}
     if os.isatty(sys.stdout.fileno()):
@@ -464,6 +492,27 @@ class Checker:
         warn_func("warn", "unknown variable %s not in original"%name)
         return "(error)"
 
+    def trim_annotations(self, text):
+        for endmark in ('<<C<<', '<<A<<'):
+            index = text.find(endmark)
+            if index != -1:
+                return text[:index]
+        return text
+
+    def do_text_replacements(self, text, warn_func):
+        for flagname, flagfunc in self.to_flag:
+            if flagfunc(text):
+                warn_func("warn", "badness '%s' in text before substs"%flagname)
+
+        text = self.trim_annotations(text)
+        for repl in self.replacements:
+            text = repl(text)
+
+        for flagname, flagfunc in self.to_flag:
+            if flagfunc(text):
+                warn_func("warn", "badness '%s' in text after substs"%flagname)
+        return text
+
     def render_text(self, text, orig, warn_func, get_text):
         """yield (optional_ansi_prefix, text), caller must iterate"""
         result = ""
@@ -635,6 +684,8 @@ class Checker:
         metrics = None
         if boxtype is not None:
             metrics = self.char_metrics.get(boxtype[0])
+
+        text = self.do_text_replacements(text, print_please)
 
         generator = self.render_text(text, orig, print_please, get_text)
         if metrics is None:
