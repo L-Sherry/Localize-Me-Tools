@@ -30,6 +30,12 @@ def find_tags(file_path, dict_path, previous):
     elif first_component == "item-database":
         tags.append("item")
         tags.append("item-%s"%dict_path[-1])
+    elif first_component == "lang" and dict_path[0] == 'labels':
+        tags.append("langfile")
+        if file_path[-1].startswith("gui"):
+            if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
+                tags.append("equip-description")
+
     else:
         tags.append("%s-%s"%(first_component, dict_path[-1]))
 
@@ -45,6 +51,7 @@ def find_tags(file_path, dict_path, previous):
                 text_type = text_type[5:]
             if text_type.endswith("_msg"):
                 text_type = text_type[:-4]
+            tags.append(text_type)
             if text_type in frozenset(("msg", "side")):
                 tags.append("conv")
                 who = previous[-1].get("person")
@@ -54,8 +61,6 @@ def find_tags(file_path, dict_path, previous):
                     else:
                         tags.append(who["person"])
                         tags.append(who["expression"].lower())
-            else:
-                tags.append(text_type)
 
     if not tags:
         tags.append("Unknown")
@@ -73,6 +78,7 @@ box_types_by_tags = {
         "item-description": ("normal", "hbox", 558, 1),
 
         # status descriptions could be 290 in status menu
+        "equip-description": ("small", "vbox", 290, 2),
 
         # subtasks in quest menu are 220 max
         "quests-text": ("small", "hbox", 220, 1),
