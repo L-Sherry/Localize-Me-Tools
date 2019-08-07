@@ -149,12 +149,12 @@ class CircularBuffer:
             self.array[self.index % self.size] = elem
         self.index += 1
     def __iter__(self):
+        if not self.array:
+            return
         start_at = self.index % len(self.array)
-        for index in range(start_at, len(self.array)):
-            yield self.array[index]
-        for index in range(start_at):
-            yield self.array[index]
-
+        yield from (self.array[index] for index in range(start_at,
+                                                         len(self.array)))
+        yield from (self.array[index] for index in range(start_at))
 
 
 class CommandParser:
