@@ -330,12 +330,14 @@ class Checker:
         return text
 
     variables = [
-        ("lore.title.", "", "database", ["lore", "%s", "title"]),
-        ("item.", ".name", "item_database", ["items", "%i", "name"]),
-        # TODO: check
-        ("combat.name.", "", "database", ["enemies", "%s", "name"]),
-        ("area.", ".name", "database", ["areas", "%s", "name"]),
-        ("misc.localNum.", "", check_number.__func__, [])
+        (["lore", "title", "#1"], ["database.json"], ['lore', "#1", 'title']),
+        (["item", 0, "name"], ["item-database.json"],["items", 0, "name"]),
+        (["area", "#1", "name"], ["database.json"], ['areas', '#1', 'name']),
+        (["area", "#1", "landmarks", "name", "#2"],
+         ["database.json"], ['areas', '#1', 'landmarks', '#2', 'name']),
+        (["misc", "localNum", 0], lambda p,w:p[0], None),
+        (["combat", "name", "#*"],
+         ["database.json"], ['enemies', '#*', 'name']),
     ]
 
     def find_stuff_in_orig(self, orig, wanted_type):
@@ -344,24 +346,48 @@ class Checker:
             if type_ is wanted_type:
                 yield value
 
-    def lookup_var(self, name, warn_func, orig):
 
-        for prefix, suffix, file_, dict_path_template in self.variables:
-            if not name.startswith(prefix) or not name.endswith(suffix):
+    def match_var_params(self, template, actual, warn_func):
+        split = actual
+        if template[-1] == '#*':
+            split = actual[:len(template)-1]
+            split.append(".".join(actual[len(template)-1:]))
+        if len(split) != len(template):
+            return None
+        params = {}
+        for our_part, their_part in zip(split, template):
+            if isinstance(their_part, int) or their_part.startswith('#'):
+                params[their_part] = our_part
+            elif our_part != their_part:
+                return None # does not match template
+
+        for key, value in params.items():
+            if isinstance(key, int) and not value.isdigit():
+                warn_func("error", "'%s' is not a number"%value)
+                return {}
+        return params
+
+
+    def lookup_var(self, name, warn_func, orig, get_text):
+        normal_split = name.split('.')
+
+        for template, file_path, dict_path_template in self.variables:
+            params = self.match_var_params(template, normal_split, warn_func)
+            if params is None:
                 continue
-            name = name[len(prefix): len(name)-len(suffix)]
+            elif len(params) == 0:
+                return # entry has an error
 
-            if callable(file_):
-                return file_(name, warn_func)
+            if callable(file_path):
+                return file_path(params, warn_func)
+            elif file_path is None:
+                return "(something)"
 
             dict_path = []
             for component in dict_path_template:
-                if component == "%s":
-                    dict_path.append(name.replace('/', '.'))
-                elif component == "%i":
-                    if not name.isdigit() or name[0:1] == '0':
-                        warn_func("error", "number '%s' is invalid"%name)
-                    dict_path.append(int(name))
+                subst = params.get(component)
+                if subst:
+                    dict_path.append(subst.replace('/', '.'))
                 else:
                     dict_path.append(component)
 
