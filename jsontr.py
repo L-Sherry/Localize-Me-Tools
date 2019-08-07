@@ -207,6 +207,22 @@ class CommandParser:
         return trans["text"]
 
 
+class RenderedText:
+    def __init__(self, plain="", ansi="", size=0, space=None):
+        self.plain = plain # raw text
+        self.ansi = ansi # rendered text, with ansi excapes
+        self.size = size # horizontal size once rendered
+        self.space = space # the space after this text, or none
+    def add_plain_text(self, text):
+        """add plain text, to both ansi and plain"""
+        self.plain += text
+        self.ansi += text
+    def __repr__(self):
+        return "RenderedText(%s,%s,%s,%s)"%(repr(self.plain),
+                                            repr(self.ansi),
+                                            repr(self.size),
+                                            repr(self.space))
+
 class Checker:
     def __init__(self, gamepath, lang, check_settings):
         gamepath = common.get_assets_path(gamepath)
@@ -411,8 +427,8 @@ class Checker:
         warn_func("warn", "unknown variable %s not in original"%name)
         return "(error)"
 
-    def try_render_text(self, text, orig, warn_func):
-        """returns (final, printable with ansi)"""
+    def render_text(self, text, orig, warn_func, get_text):
+        """yield (optional_ansi_prefix, text), caller must iterate"""
         result = ""
         printable_result = ""
         current_color = "0"
@@ -420,8 +436,7 @@ class Checker:
 
         for type_, value in self.lex_that_text(text, warn_func):
             if type_ is self.TEXT:
-                result += value
-                printable_result += value
+                yield ("", value)
             elif type_ is self.DELAY:
                 pass
             elif type_ is self.ESCAPE:
@@ -434,7 +449,9 @@ class Checker:
                 if value == current_color:
                     warn_func("warn", "same color assigned twice")
                 current_color = value
-                printable_result += self.colors.get(actual_color, "")
+                ansi_color = self.colors.get(actual_color)
+                if ansi_color:
+                    yield (ansi_color, "")
             elif type_ is self.SPEED:
                 if len(value) != 1 or value not in "01234567":
                     warn_func("error", "bad \s[] command")
@@ -447,25 +464,83 @@ class Checker:
             elif type_ is self.ICON:
                 if value not in self.find_stuff_in_orig(orig, self.ICON):
                     warn_func("notice", "icon not present in original text")
-                result+='[]'
-                printable_result+='←'
+                yield ('','@')
             elif type_ is self.VARREF:
-                value = self.lookup_var(value, warn_func, orig)
-                printable_result += value
-                result += value
+                value = self.lookup_var(value, warn_func, orig, get_text)
+                yield ('', value)
             else:
                 assert False
         if current_color != "0":
             warn_func("notice", "color does not end with 0")
-        return (result, printable_result)
 
-    def check_text(self, file_dict_path_str, text, orig):
+    @staticmethod
+    def get_next_space_index(string):
+        next_space = string.find(' ')
+        next_nl = string.find('\n')
+        if next_space == -1:
+            return next_nl
+        elif next_nl == -1:
+            return next_space
+        else:
+            return min(next_space, next_nl)
+
+    def collect_words(self):
+        words = []
+        current_word = RenderedText()
+        current_word.space = None
+        while True:
+            something = (yield None)
+            if something is None:
+                break
+            ansi, plaintext = something
+            current_word.ansi += ansi
+
+            while plaintext:
+                next_space = self.get_next_space_index(plaintext)
+
+                if next_space == -1:
+                    next_space = len(plaintext)
+                current_word.add_plain_text(plaintext[:next_space])
+                if next_space != len(plaintext):
+                    current_word.space = plaintext[next_space]
+                    words.append(current_word)
+                    current_word = RenderedText()
+                    current_word.space = None
+                plaintext = plaintext[next_space+1:]
+        words.append(current_word)
+        yield words
+
+    def get_words(self, iterator):
+        word_collector = self.collect_words()
+        # you need to go to the first yield before you send stuff to it.
+        next(word_collector)
+        for ansi, text in iterator:
+            word_collector.send((ansi, text))
+        return word_collector.send(None)
+
+    def calc_string_size(self, string, metrics, warn_func):
+        ret = 0
+        for char in string:
+            size = metrics.get(char)
+            if size is None:
+                warn_func("warn", "Character %s has no metrics"%repr(char))
+                size = 1
+            ret += size
+        return ret
+
+    def check_text(self, file_path, dict_path, text, orig, tags, get_text):
         # it would be great if we had the tags here.
-        def print_please(severity, error):
-            self.print_error(file_dict_path_str, severity, error, text)
+        def print_please(severity, error, display_text = text):
+            file_dict_path_str = common.serialize_dict_path(file_path,
+                                                            dict_path)
+            self.print_error(file_dict_path_str, severity, error, display_text)
 
-        # that's the only test we are doing for now
-        self.try_render_text(text, orig, print_please)
+        generator = self.render_text(text, orig, print_please, get_text)
+
+        words = self.get_words(generator)
+        for word in words:
+            word.size = self.calc_string_size(word.plain, metrics, print_please)
+
 
     def check_pack(self, pack, from_locale):
         for file_dict_path_str, trans in pack.get_all().items():
