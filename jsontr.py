@@ -857,9 +857,9 @@ def parse_args():
     config.update_with_argparse_result(result)
     config.check()
 
-    extra["count"] = "count" in result
+    extra["do_count"] = "count" in result
     extra["debug"] = vars(result).get("debug", False)
-    extra["check"] = "check" in result
+    extra["do_check"] = "check" in result
     extra["check-asset-path"] = vars(result).get("assetpath")
     return config, extra
 
@@ -898,10 +898,10 @@ if __name__ == '__main__':
         del history
         print("loaded", config.packfile)
         print(pack.get_stats(config))
-    if extra["count"]:
+    if extra["do_count"]:
         count_or_debug(config, extra, pack)
-    if extra["check"]:
-        checker = Checker(config.gamedir, config.from_locale, "FIXME")
+    if extra["do_check"]:
+        checker = Checker(config.gamedir, config.from_locale, extra["check"])
         if extra["check-asset-path"]:
             checker.check_assets(extra["check-asset-path"], config.from_locale)
         else:
