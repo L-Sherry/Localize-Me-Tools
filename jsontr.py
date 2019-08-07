@@ -242,23 +242,31 @@ class Checker:
     }
 
     gamecolor = {
+        # it normally depends on the font type... here i do a mix.
+        # normal: white,red,green,yellow,grey
+        # small: grey,red,green,yellow,orange
+        # tiny: grey,red,green,yellow
         "0": "normal", "1": "red", "2":"green",
-        "3": "blue", # actually purple
+        "3": "yellow", # game says it's 'purple'
         "4": "purple", # actually gray
-        "5": "yellow", # actually orange
+        "5": "orange", # actually orange
     }
 
     @staticmethod
-    def wrap_text(text, length, indentchar):
-        to_print = (text[i:i+length] for i in range(0, len(text), length))
+    def wrap_output(text, length, indentchar):
+        to_print = []
+        for line in text.split('\n'):
+            to_print.extend(line[i:i+length] for i in range(0, len(line),
+                                                            length))
         return ("\n%s"%(indentchar)).join(to_print)
 
     def print_error(self, file_dict_path_str, severity, error, text):
         # sadly, we can't give line numbers...
         print("%s: %s%s"%(self.severities_text.get(severity, severity),
                          error, self.colors['normal']))
-        print("at %s"%(self.wrap_text(file_dict_path_str, 64, "\t\t")))
-        print("\t%s%s"%(self.wrap_text(text, 72, '\t'), self.colors["normal"]))
+        print("at %s"%(self.wrap_output(file_dict_path_str, 64, "\t\t")))
+        print("\t%s%s"%(self.wrap_output(text, 72, '\t'),
+                        self.colors["normal"]))
         if severity == "error":
             self.errors += 1
 
