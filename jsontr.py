@@ -36,6 +36,8 @@ def find_tags(file_path, dict_path, previous):
             if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
                 tags.append("equip-description")
 
+    elif first_component == "players" and file_path[1] == "lea.json":
+        tags.append("players-lea-%s"%dict_path[-1])
     else:
         tags.append("%s-%s"%(first_component, dict_path[-1]))
 
@@ -80,10 +82,28 @@ box_types_by_tags = {
         # status descriptions could be 290 in status menu
         "equip-description": ("small", "vbox", 290, 2),
 
+        # arts name for lea are 128 normal hbox in status menu....
+        # but they are much shorter in circuit menu, more like around 110
+        # depending on the translation of the art type.
+        "players-lea-name": ("normal", "hbox", 128, 1),
+        #"players-lea-name": ("normal", "hbox", 110, 1),
+
+        # achievements:
+        # name sems like 240px (295 - 54 according to game).
+        "achievements-name": ("normal", "hbox", 239, 1),
+        # confirmed
+        "achievements-description": ('small', 'box', 224, 2),
+
+        # quest name size ? 206 to 212
+        "quests-text": ("normal", "hbox", 206, 1),
+
         # subtasks in quest menu are 220 max
         "quests-text": ("small", "hbox", 220, 1),
         # quest descriptions are 254 max, 4 lines.
         "quests-description": ("small", "vbox", 254, 4),
+
+        # xeno dialogs seems to be in a optimized vbox of 140, but no line
+        # limit.
 
         # side msgs are 202 confirmed, max 5 lines, and that's a lot already
         "side": ("normal", "vbox", 202, 5)
