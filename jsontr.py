@@ -336,19 +336,25 @@ class Checker:
     }
 
     @staticmethod
-    def wrap_output(text, length, indentchar):
+    def wrap_output(text, length, indentchar, indentcharwrap = None):
         to_print = []
+        if indentcharwrap is None:
+            indentcharwrap = indentchar
+        def indentbyindex(i):
+            if not to_print:
+                return ""
+            return indentchar if i else indentcharwrap
         for line in text.split('\n'):
-            to_print.extend(line[i:i+length] for i in range(0, len(line),
-                                                            length))
-        return ("\n%s"%(indentchar)).join(to_print)
+            to_print.extend( (indentbyindex(i) + line[i:i+length])
+                             for i in range(0, len(line), length))
+        return "\n".join(to_print)
 
     def print_error(self, file_dict_path_str, severity, error, text):
         # sadly, we can't give line numbers...
         print("%s: %s%s"%(self.severities_text.get(severity, severity),
                          error, self.colors['normal']))
-        print("at %s"%(self.wrap_output(file_dict_path_str, 64, "\t\t")))
-        print("\t%s%s"%(self.wrap_output(text, 72, '\t'),
+        print("at %s"%(self.wrap_output(file_dict_path_str, 80-3, "\t\t")))
+        print("   %s%s"%(self.wrap_output(text, 72, '\t', '   '),
                         self.colors["normal"]))
         if severity == "error":
             self.errors += 1
