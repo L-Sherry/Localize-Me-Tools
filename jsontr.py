@@ -513,7 +513,7 @@ class Checker:
                 warn_func("warn", "badness '%s' in text after substs"%flagname)
         return text
 
-    def render_text(self, text, orig, warn_func, get_text):
+    def parse_text(self, text, orig, warn_func, get_text):
         """yield (optional_ansi_prefix, text), caller must iterate"""
         result = ""
         printable_result = ""
@@ -629,7 +629,7 @@ class Checker:
                 lines.append(current_line)
                 current_line = RenderedText()
                 newsize = word.size
-            else:
+            elif has_space:
                 current_line.add_plain_text(" ")
 
             current_line.ansi += word.ansi
@@ -662,7 +662,7 @@ class Checker:
                 trimedsize = self.calc_string_size(bigline[:charsize], metrics,
                                                    lambda *l:None)
 
-                if trimedsize < maxsize:
+                if trimedsize < boxtype[2]:
                     indication = bigline[:charsize] + '[]' + bigline[charsize:]
                     break
 
@@ -687,7 +687,7 @@ class Checker:
 
         text = self.do_text_replacements(text, print_please)
 
-        generator = self.render_text(text, orig, print_please, get_text)
+        generator = self.parse_text(text, orig, print_please, get_text)
         if metrics is None:
             # consume the generator, consume it so it checks stuff
             list(generator)
