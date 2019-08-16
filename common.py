@@ -59,12 +59,34 @@ def walk_json_inner(json, dict_path = None, reverse_path = None):
     popped_json = reverse_path.pop()
     assert popped_json is json
 
+def walk_json_filtered_inner(json, filterfunc):
+    if filterfunc(json):
+        yield json, [], []
+        return
+    if isinstance(json, dict):
+        iterable = json.items()
+    elif isinstance(json, list):
+        iterable = ((str(i), value) for i,value in enumerate(json))
+    else:
+        return
+    for k,v in iterable:
+        inneriter = walk_json_filtered_inner(v, filterfunc)
+        for to_yield, rev_dict_path, rev_reverse_path in inneriter:
+            rev_dict_path.append(k)
+            rev_reverse_path.append(json)
+            yield to_yield, rev_dict_path, rev_reverse_path
+
+
+def walk_json_filtered(json, filterfunc):
+    iterator = walk_json_filtered_inner(json, filterfunc)
+    for json, rev_dict_path, rev_reverse_path in iterator:
+        rev_dict_path.reverse()
+        rev_reverse_path.reverse()
+        yield json, rev_dict_path, rev_reverse_path
+
 def walk_json_for_langlabels(json, lang_to_check):
-    iterator = walk_json_inner(json)
-    for value, dict_path, reverse_path in iterator:
-        if isinstance(value, dict) and lang_to_check in value:
-            iterator.send(False)
-            yield value, dict_path, reverse_path
+    filter_func = lambda ll: (isinstance(ll, dict) and lang_to_check in ll)
+    yield from walk_json_filtered(json, filter_func)
 
 def walk_langfile_json(json, lang):
     for value, dict_path, reverse_path in walk_json_inner(json):
