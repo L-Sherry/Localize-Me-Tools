@@ -85,7 +85,7 @@ def walk_json_filtered(json, filterfunc):
         yield json, rev_dict_path, rev_reverse_path
 
 def walk_json_for_langlabels(json, lang_to_check):
-    filter_func = lambda ll: (isinstance(ll, dict) and lang_to_check in ll)
+    filter_func = lambda ll: (ll.__class__ is dict and lang_to_check in ll)
     yield from walk_json_filtered(json, filter_func)
 
 def walk_langfile_json(json, lang):
@@ -189,6 +189,7 @@ class sparse_dict_path_reader:
             print("Cannot find game file:", "/".join(file_path), ':', str(e))
             self.last_data = {}
         self.last_loaded = file_path
+        return self.last_data
 
     def get_complete(self, file_path, dict_path):
         """return complete data given a file_path/dict_path
