@@ -66,13 +66,13 @@ def walk_json_filtered_inner(json, filterfunc):
     if isinstance(json, dict):
         iterable = json.items()
     elif isinstance(json, list):
-        iterable = ((str(i), value) for i,value in enumerate(json))
+        iterable = enumerate(json)
     else:
         return
     for k,v in iterable:
         inneriter = walk_json_filtered_inner(v, filterfunc)
         for to_yield, rev_dict_path, rev_reverse_path in inneriter:
-            rev_dict_path.append(k)
+            rev_dict_path.append(str(k))
             rev_reverse_path.append(json)
             yield to_yield, rev_dict_path, rev_reverse_path
 
