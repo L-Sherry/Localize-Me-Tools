@@ -142,7 +142,8 @@ class PackFile:
             os.rename(filename, filename+'~')
         except:
             pass
-        common.save_json(filename, self.translations)
+        common.save_json(filename+".new", self.translations)
+        os.rename(filename+".new", filename)
 
     def add_quality_stat(self, entry):
         qual = entry.get("quality")
@@ -1222,11 +1223,20 @@ if __name__ == '__main__':
 
     readliner.set_compose_map(config.compose_chars)
 
+    import signal
+    def sigint_once(sigint, frame):
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.default_int_handler(sigint, frame)
+    signal.signal(signal.SIGINT, sigint_once)
+
     try:
-        do_the_translating(config, pack, readliner)
-    except EOFError:
-        pack.save(config.packfile)
-    except KeyboardInterrupt:
-        pack.save(config.packfile)
+        try:
+            do_the_translating(config, pack, readliner)
+        except EOFError:
+            pass
+        except KeyboardInterrupt:
+            import signal
+            signal
+            pass
     finally:
         pack.save(config.packfile)
