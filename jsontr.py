@@ -101,6 +101,9 @@ box_types_by_tags = {
         "quests-text": ("small", "hbox", 220, 1),
         # quest descriptions are 254 max, 4 lines.
         "quests-description": ("small", "vbox", 254, 4),
+        # quest briefing has only 6 lines in the ending dialog box.
+        # unconfirmed
+        "quests-briefing": ("small", "vbox", 254, 6),
 
         # xeno dialogs seems to be in a optimized vbox of 140, but no line
         # limit.
