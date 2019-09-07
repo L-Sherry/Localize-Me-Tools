@@ -1152,6 +1152,10 @@ def parse_args():
                        Not everything can be checked in this mode""")
     check.set_defaults(check=True)
 
+    get = subparser.add_parser("get", help="""Get text given their id""")
+    get.add_argument("file_dict_path",
+                     help="A file dict path, e.g. 'hello/test.json/thing/4/t'")
+
 
     result = parser.parse_args()
     if "save_config" in result:
@@ -1174,6 +1178,7 @@ def parse_args():
     config.check()
 
     extra["do_count"] = "count" in result
+    extra["do_get"] = vars(result).get("file_dict_path")
     extra["debug"] = vars(result).get("debug", False)
     extra["do_check"] = "check" in result
     extra["check-asset-path"] = vars(result).get("assetpath")
@@ -1199,6 +1204,21 @@ def count_or_debug(config, extra, pack):
 
 if __name__ == '__main__':
     config, extra = parse_args()
+
+    if extra["do_get"]:
+        sparse_reader = common.sparse_dict_path_reader(config.gamedir,
+                                                       config.from_locale)
+        complete = sparse_reader.get_complete_by_str(extra["do_get"])
+        langlabel, (file_path, dict_path), reverse = complete
+        if not langlabel:
+            print("Not found")
+            sys.exit(1)
+        tags = find_tags(file_path, dict_path, reverse)
+        printable, _ = config.get_trans_to_show(extra["do_get"], langlabel,
+                                                tags, None)
+        print(printable)
+        sys.exit(0)
+
     pack = PackFile()
     readliner = Readliner()
     if os.path.exists(config.packfile) and not extra["check-asset-path"]:
