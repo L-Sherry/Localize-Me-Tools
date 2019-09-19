@@ -706,6 +706,7 @@ class Configuration:
 
     default_options = {
             "gamedir": ".",
+            "string_cache_file": "string_cache.json",
             "from_locale": "en_US",
             "show_locales": [],
             "compose_chars": [],
@@ -740,6 +741,10 @@ class Configuration:
                             then typing either "|oe", "|eo", "$oe", "$eo" and
                             then hitting tab will change the three characters
                             into œ.""")
+        parser.add_argument("--string-cache", dest="string_cache_file",
+                            metavar="<path to cache file>", help="""Location of
+                            the optional cache file.  If present, it will be
+                            used instead of browsing through gamedir.""")
 
         split_me_regex = re.compile('\s+')
         listoflist = lambda string: split_me_regex.split(string)
@@ -849,28 +854,81 @@ class Configuration:
             json[key] = getattr(self, key)
         common.save_json(filename, json)
 
-    def iterate_over_filtered(self, packfile, assets_path):
-        filter_ = self.filter_file_path_func
-        dirpath = os.path.join(common.get_assets_path(assets_path), "data")
+    def iterate_over_game_files(self, other_filter = lambda fdps,ll: True):
+        """iterate over the game files
+
+        this applies the file_path/dict_path and tags filters as requested.
+
+        other_filter will be called as:
+        other_filter(file_dict_path_str, lang_label)
+        and will skip the translation if the result is None."""
+
+        filter_ = self.filter_dict_path_func
+        dirpath = os.path.join(common.get_assets_path(self.gamedir), "data")
         iterable = common.walk_assets_for_translatables(dirpath,
                                                         self.from_locale,
                                                         filter_)
+
         for lang_label, (file_path, dict_path), reverse_path in iterable:
             if not self.filter_dict_path_func(dict_path):
                 continue
             path_str = common.serialize_dict_path(file_path, dict_path)
-            known = packfile.get(path_str)
-            if self.ignore_unknown and not known:
-                continue
-            orig = lang_label[self.from_locale]
-            if self.ignore_known and known and orig == known.get('orig'):
+
+            info = other_filter(path_str, lang_label)
+            if info is None:
                 continue
 
             tags = tagger.find_tags(file_path, dict_path, reverse_path)
             if not self.filter_tags_func(tags):
                 continue
 
-            yield path_str, lang_label, known, tags
+            yield path_str, lang_label, tags, info
+
+    def iterate_over_cache(self, other_filter = lambda fdps,ll: True):
+        # a streaming parser would be ideal here... but this will do.
+        print("Loading string cache %s"%self.string_cache_file)
+        cache = common.load_json(self.string_cache_file)
+        for file_dict_path_str, values in cache.items():
+
+            file_p, dict_p = common.unserialize_dict_path(file_dict_path_str)
+            if not self.filter_file_path_func(file_p):
+                continue
+            if not self.filter_dict_path_func(dict_p):
+                continue
+
+            lang_label = values["langlabel"]
+
+            info = other_filter(file_dict_path_str, lang_label)
+            if info is None:
+                continue
+
+            tags = values["tags"].split()
+            if not self.filter_tags_func(tags):
+                continue
+            yield file_dict_path_str, lang_label, tags, info
+
+    def get_trans_known_filter(self, packfile):
+        """A filter suitable for other_filter that yield known translations
+
+        it will also reject unknown/known translation as configured"""
+        def other_filter(file_dict_path_str, lang_label):
+            known = packfile.get(file_dict_path_str)
+            if self.ignore_unknown and not known:
+                return None
+            orig = lang_label[self.from_locale]
+            if self.ignore_known and known and orig == known.get('orig'):
+                return None
+            if known:
+                return known
+            else:
+                return False
+        return other_filter
+
+    def iterate_over_configured_source(self, pack):
+        other_filter = config.get_trans_known_filter(pack)
+        if os.path.exists(self.string_cache_file):
+            return self.iterate_over_cache(other_filter)
+        return self.iterate_over_game_files(other_filter)
 
     def get_trans_to_show(self, file_dict_path_str, lang_label, tags, known):
         """Return a (string, list<string>) containing stuff to translate.
@@ -932,10 +990,8 @@ def ask_for_translation(config, pack, to_show):
             break
     return CommandParser.parse_line_input(line)
 
-
-def do_the_translating(config, pack, readliner):
-    iterator = config.iterate_over_filtered(pack, config.gamedir)
-    for file_dict_path_str, lang_label, known, tags in iterator:
+def ask_for_multiple_translations(config, pack, iterator):
+    for file_dict_path_str, lang_label, tags, known in iterator:
         to_show, origs = config.get_trans_to_show(file_dict_path_str,
                                                   lang_label, tags, known)
 
@@ -956,8 +1012,6 @@ def do_the_translating(config, pack, readliner):
         if not result["text"] and not config.allow_empty:
             continue
         pack.add_translation(file_dict_path_str, orig, result)
-
-
 
 def parse_args():
     import argparse
@@ -1046,6 +1100,17 @@ def parse_args():
     get.add_argument("file_dict_path",
                      help="A file dict path, e.g. 'hello/test.json/thing/4/t'")
 
+    save_cache = subparser.add_parser("save_cache",
+                                      help="""Browse the game file to look for
+                                      strings and cache them into the file
+                                      specified by --string-cache, so that
+                                      reading from them is faster later on.
+                                      Note that the filtering/ignoring options
+                                      will also affect the content of the cache
+                                      so the cache should be a super-set of the                                       filtering options that are used later on.
+                                      """)
+    save_cache.set_defaults(save_cache=True)
+
 
     result = parser.parse_args()
     if "save_config" in result:
@@ -1072,13 +1137,14 @@ def parse_args():
     extra["debug"] = vars(result).get("debug", False)
     extra["do_check"] = "check" in result
     extra["check-asset-path"] = vars(result).get("assetpath")
+    extra["do_cache"] = "save_cache" in result
     return config, extra
 
 def count_or_debug(config, extra, pack):
     uniques = {}
     count = 0
-    iterator = config.iterate_over_filtered(pack, config.gamedir)
-    for file_dict_path_str, lang_label, _, tags in iterator:
+    iterator = config.iterate_over_configured_source(pack)
+    for file_dict_path_str, lang_label, tags, _ in iterator:
         orig = lang_label[config.from_locale]
         uniques[orig] = uniques.get(orig, 0) + 1
         count += 1
@@ -1091,6 +1157,21 @@ def count_or_debug(config, extra, pack):
                                          reverse=True)):
         print("%d\t%s"%(c, s))
     sys.exit(0)
+
+def save_into_cache(config, pack):
+    if not config.string_cache_file:
+        print("no string cache file specified")
+        sys.exit(1)
+    other_filter = config.get_trans_known_filter(pack)
+    iterator = config.iterate_over_game_files(other_filter)
+
+    cache = {}
+    for file_dict_path_str, lang_label, tags, _ in iterator:
+        cache[file_dict_path_str] = {
+            "langlabel": lang_label,
+             "tags": " ".join(tags)
+        }
+    common.save_json(config.string_cache_file, cache)
 
 if __name__ == '__main__':
     config, extra = parse_args()
@@ -1133,6 +1214,9 @@ if __name__ == '__main__':
         else:
             checker.check_pack(pack, config.from_locale)
         sys.exit(1 if checker.errors else 0)
+    if extra["do_cache"]:
+        save_into_cache(config, pack)
+        sys.exit(0)
 
     readliner.set_compose_map(config.compose_chars)
 
@@ -1144,7 +1228,8 @@ if __name__ == '__main__':
 
     try:
         try:
-            do_the_translating(config, pack, readliner)
+            iterator = config.iterate_over_configured_source(pack)
+            ask_for_multiple_translations(config, pack, iterator)
         except EOFError:
             pass
         except KeyboardInterrupt:
