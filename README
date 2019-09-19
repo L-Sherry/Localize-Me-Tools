@@ -15,11 +15,12 @@ each of them using a readline interface.
 It takes an insane amount of options, that can be saved in a config file
 for easier handling.  See --help for detail about them.
 
-It possess four subcommands: "saveconfig" to save the current command line
-option into a config file, "continue" to start or continue translating the
-game, "count" which simply count strings, and "check", which make several
-attempts at finding problems with the translations.
-
+It possess five subcommands:
+"saveconfig" to save the current command line option into a config file
+"continue" to start or continue translating the game
+"count" which simply count strings
+"check" which make several attempts at finding problems with the translations.
+"save_cache" which will cache the strings into a file for faster access later.
 
 packfile.py
 -----------
