@@ -863,7 +863,7 @@ class Configuration:
         other_filter(file_dict_path_str, lang_label)
         and will skip the translation if the result is None."""
 
-        filter_ = self.filter_dict_path_func
+        filter_ = self.filter_file_path_func
         dirpath = os.path.join(common.get_assets_path(self.gamedir), "data")
         iterable = common.walk_assets_for_translatables(dirpath,
                                                         self.from_locale,
