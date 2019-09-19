@@ -29,12 +29,14 @@ class PackFile:
             on_each_text_load(entry)
 
     def save(self, filename):
+        print("Saving", end="...")
         try:
             os.rename(filename, filename+'~')
         except:
             pass
         common.save_json(filename+".new", self.translations)
         os.rename(filename+".new", filename)
+        print(" ok.")
 
     def add_quality_stat(self, entry):
         qual = entry.get("quality")
