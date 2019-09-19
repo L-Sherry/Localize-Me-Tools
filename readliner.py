@@ -78,7 +78,7 @@ class Readliner:
 
     @staticmethod
     def has_history_support():
-            return Readliner.readline is not None
+        return Readliner.readline is not None
 
     #has_history_support = staticmethod(lambda: Readliner.readline is not None)
 
