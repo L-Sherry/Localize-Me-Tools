@@ -941,7 +941,9 @@ class Configuration:
         if known:
             our_orig = known.get('orig')
             if our_orig and our_orig != lang_label[self.from_locale]:
-                string += "our:%s\n"%known['orig']
+                string += "stale translation:\n"
+                string += "our orig :%s\n"%known['orig']
+                string += "our trans:%s\n"%known['text']
 
         for locale in self.show_locales:
             text = lang_label.get(locale)
@@ -1002,12 +1004,12 @@ def ask_for_multiple_translations(config, pack, iterator):
         readliner.set_complete_array(words)
 
         orig = lang_label[config.from_locale]
-        if known:
+        dup = pack.get_by_orig(orig)
+        if dup:
+            readliner.prefill_text(CommandParser.make_line_input(dup))
+        elif known:
             readliner.prefill_text(CommandParser.make_line_input(known))
-        else:
-            dup = pack.get_by_orig(orig)
-            if dup:
-                readliner.prefill_text(CommandParser.make_line_input(dup))
+
         result = ask_for_translation(config, pack, to_show)
         if not result["text"] and not config.allow_empty:
             continue
