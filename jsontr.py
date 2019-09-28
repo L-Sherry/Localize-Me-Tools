@@ -717,7 +717,7 @@ class Configuration:
             "ignore_unknown": False,
             "allow_empty": False,
             "editor": os.getenv("EDITOR") or "",
-            "packfile": "",
+            "packfile": "translations.pack.json",
             "total_count": 0,
             "unique_count": 0
     }
