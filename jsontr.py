@@ -854,7 +854,7 @@ class Configuration:
             json[key] = getattr(self, key)
         common.save_json(filename, json)
 
-    def iterate_over_game_files(self, other_filter = lambda fdps,ll: True):
+    def iterate_over_game_files(self, other_filter):
         """iterate over the game files
 
         this applies the file_path/dict_path and tags filters as requested.
@@ -884,7 +884,7 @@ class Configuration:
 
             yield path_str, lang_label, tags, info
 
-    def iterate_over_cache(self, other_filter = lambda fdps,ll: True):
+    def iterate_over_cache(self, other_filter):
         # a streaming parser would be ideal here... but this will do.
         print("Loading string cache %s"%self.string_cache_file)
         cache = common.load_json(self.string_cache_file)
