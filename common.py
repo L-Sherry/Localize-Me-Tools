@@ -33,6 +33,17 @@ def sort_dict(input_dict, recurse = False):
         res[k] = v
     return res
 
+def drain_dict(input_dict):
+    """Iterate over the dict's items, draining the dict in the process.
+
+    this aims at preserving the iteration order of the dict."""
+    # turn the dict into an array
+    # this should be fast, with references
+    array = list(input_dict.items())
+    input_dict.clear()
+    array.reverse()
+    while array:
+        yield array.pop()
 
 def walk_json_inner(json, dict_path = None, reverse_path = None):
     if dict_path is None:

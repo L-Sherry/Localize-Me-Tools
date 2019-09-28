@@ -888,7 +888,7 @@ class Configuration:
         # a streaming parser would be ideal here... but this will do.
         print("Loading string cache %s"%self.string_cache_file)
         cache = common.load_json(self.string_cache_file)
-        for file_dict_path_str, values in cache.items():
+        for file_dict_path_str, values in common.drain_dict(cache):
 
             file_p, dict_p = common.unserialize_dict_path(file_dict_path_str)
             if not self.filter_file_path_func(file_p):
