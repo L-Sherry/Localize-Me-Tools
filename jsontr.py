@@ -823,6 +823,7 @@ class Configuration:
     def reset(self):
         for key, value in self.default_options.items():
             setattr(self, key, value)
+        self.locales_to_show = [self.from_locale]
 
     def check(self):
         # filter_file_path -> filter_file_path_func
@@ -833,7 +834,9 @@ class Configuration:
             filter_ = self.get_filter_from_components(components)
             setattr(self, "filter_%s_func"%filtertype, filter_)
         if not self.show_locales:
-            self.show_locales = [self.from_locale]
+            self.locales_to_show = [self.from_locale]
+        else:
+            self.locales_to_show = self.show_locales
 
     def load_from_file(self, filename, unknown_option = lambda k,v: False):
         json = common.load_json(filename)
@@ -945,7 +948,7 @@ class Configuration:
                 string += "our orig :%s\n"%known['orig']
                 string += "our trans:%s\n"%known['text']
 
-        for locale in self.show_locales:
+        for locale in self.locales_to_show:
             text = lang_label.get(locale)
             if text is None:
                 string += "no %s\n"%locale
