@@ -650,6 +650,7 @@ class Checker:
 
             true_orig = orig_langlabel.get(self.sparse_reader.lang)
             orig = trans.get("orig")
+            text = trans.get("text")
             if true_orig is None:
                 self.print_error(file_dict_path_str, "warn",
                                  "translation is stale: does not exist anymore",
@@ -659,7 +660,6 @@ class Checker:
                 self.print_error(file_dict_path_str, "warn",
                                  "translation is stale: original text differs",
                                  text)
-            text = trans.get("text")
             if not text:
                 if "ciphertext" in trans:
                     self.print_error(file_dict_path_str, "notice",
