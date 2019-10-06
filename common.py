@@ -208,10 +208,13 @@ class sparse_dict_path_reader:
         return something with the same format as
         walk_assets_for_translatables(), note that first return may be None"""
         self.load_file(file_path)
-        ret, reverse = get_data_by_dict_path(self.last_data, dict_path,
-                                             include_reverse=True)
-        if file_path[0] == 'lang' and ret is not None:
-            ret = { self.lang: ret }
+        ret = get_data_by_dict_path(self.last_data, dict_path,
+                                    include_reverse=True)
+        reverse = ()
+        if ret is not None:
+            ret, reverse = ret
+            if file_path[0] == 'lang':
+                ret = { self.lang: ret }
         return (ret, (file_path, dict_path), reverse)
 
 
