@@ -741,7 +741,7 @@ class Configuration:
                             then typing either "|oe", "|eo", "$oe", "$eo" and
                             then hitting tab will change the three characters
                             into œ.""")
-        parser.add_argument("--string-cache", dest="string_cache_file",
+        parser.add_argument("--string-cache-file", dest="string_cache_file",
                             metavar="<path to cache file>", help="""Location of
                             the optional cache file.  If present, it will be
                             used instead of browsing through gamedir.""")
@@ -1105,7 +1105,7 @@ def parse_args():
     save_cache = subparser.add_parser("save_cache",
                                       help="""Browse the game file to look for
                                       strings and cache them into the file
-                                      specified by --string-cache, so that
+                                      specified by --string-cache-file, so that
                                       reading from them is faster later on.
                                       Note that the filtering/ignoring options
                                       will also affect the content of the cache
