@@ -30,13 +30,15 @@ def find_tags(file_path, dict_path, previous):
         if file_path[-1].startswith("gui"):
             if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
                 tags.append("equip-description")
+            if dict_path[1:4] == ['menu', 'new-game', 'options']:
+                tags.append("newgame-%s"%dict_path[4])
 
     elif first_component == "players" and file_path[1] == "lea.json":
         tags.append("players-lea-%s"%dict_path[-1])
     else:
         tags.append("%s-%s"%(first_component, dict_path[-1]))
 
-    if isinstance(previous[-1], dict):
+    if previous and isinstance(previous[-1], dict):
         if previous[-1].get("msgType"):
             type_ = previous[-1].get("msgType").lower()
             tags.append(type_)
@@ -76,6 +78,13 @@ box_types_by_tags = {
 
         # status descriptions could be 290 in status menu
         "equip-description": ("small", "vbox", 290, 2),
+
+        # new game options, not verified, but actually shorter than item names
+        "newgame-names": ("normal", "hbox", 124, 1),
+        # like item descriptions, but no penalty
+        "newgame-descriptions": ("normal", "hbox", 558, 1),
+
+        # another approximation for
 
         # arts name for lea are 128 normal hbox in status menu....
         # but they are much shorter in circuit menu, more like around 110
