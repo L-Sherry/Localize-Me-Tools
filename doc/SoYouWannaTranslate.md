@@ -364,10 +364,16 @@ look beautiful in your green-over-black hackerman terminal, they may look
 terrible in the game and you already have an idea of what to change instead.
 
 So while the real documentation about how to create a mod using Localize-Me
-should not be here, let this serve as a quick example: Create your
-mod directory under `assets/mods` and write down a `mod.js` file by looking
-at this example for a `no_NO` translation (norvegian as spoken in Norway,
-for those not versed in Unix locales):
+is here:
+
+https://github.com/L-Sherry/Localize-me/blob/master/Documentation.md
+
+This section should still serve as a quick HOWTO.
+
+Create your mod directory under `assets/mods` and put your packfile in it.
+Then, write down a `mod.js` file by looking at this example for a `no_NO`
+translation (norvegian as spoken in Norway, for those not versed in Unix
+locales):
 
 ```
 (() => {
@@ -403,7 +409,8 @@ However, you do not have to fill them all. By default, the string matching
 the locale you are adding will be used, so here `Norsk` will be displayed
 if you are running the game in japanese.
 
-Now write this in a `package.json` to make the various mod loader happy:
+Now write this in a `package.json` to make the various mod loader
+implementations happy:
 
 ```
 {
@@ -420,8 +427,10 @@ Now write this in a `package.json` to make the various mod loader happy:
 Now this merely tells whatever mod loader you use that this mod is named
 `Norsk`, that its description is `CrossCode pa norks` and that it depends on
 some version of `Localize Me` and expect its `mod.js` to be loaded after the
-game. There seems to be a specification in the CCDirectLink/CLS repository[2]
-on what to put where.
+game's code has been loaded but not executed.
+There seems to be a specification in the CCDirectLink/CLS repository[2]
+on what to put where. Of course, your modloader may have other ideas on how
+you could write your mod.
 
 
 Now you should be able to run the game, see that there is this `Norsk` entry
@@ -431,9 +440,30 @@ are the texts that you didn't translate.
 
 Now go see what you translated, and with a bit of luck, yes, they are here !
 
-But maybe I should have told you to back up your saves first ? Oh ... Oops.
+For reference, if you open `jaevla-ja.json` with a text editor, it would
+look like this:
 
-And with this this introduction ends. I'm outta here !
+```
+{
+        "database.json/achievements/story-01/name": {
+                "text": "Kapittel 1 ble ferdigstilt",
+                "orig": "Kapitel 1 vollständig"
+        },
+        "database.json/achievements/story-01/description": {
+                "text": "Ferdig kjedelig kapittel 1",
+                "orig": "Kapitel 1 abgeschlossen."
+        },
+        "database.json/achievements/story-02/name": {
+                "text": "Kapittel 2 ble ferdigstilt",
+                "orig": "Kapitel 2 vollständig"
+        },
+        "database.json/achievements/story-02/description": {
+                "text": "Ferdig kjedelig kapittel 2",
+                "orig": "Kapitel 2 abgeschlossen."
+        },
+	[many more...]
+}
+```
 
 
 [1] You can check it for yourself using the `count` subcommand.  It simply
