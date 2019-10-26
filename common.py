@@ -184,11 +184,11 @@ def get_assets_path(path):
         return path + ("%s.."%os.sep) * (len(realsplit) - index - 1)
 
 class sparse_dict_path_reader:
-    def __init__(self, gamepath, lang):
+    def __init__(self, gamepath, default_lang):
         self.base_path = os.path.join(get_assets_path(gamepath), "data")
         self.last_loaded = None
         self.last_data = None
-        self.lang = lang
+        self.default_lang = default_lang
 
     def load_file(self, file_path):
         if self.last_loaded == file_path:
@@ -214,7 +214,7 @@ class sparse_dict_path_reader:
         if ret is not None:
             ret, reverse = ret
             if file_path[0] == 'lang':
-                ret = { self.lang: ret }
+                ret = { self.default_lang: ret }
         return (ret, (file_path, dict_path), reverse)
 
 
@@ -227,18 +227,69 @@ class sparse_dict_path_reader:
         ret = get_data_by_dict_path(self.last_data, dict_path)
         if file_path[0] != "lang" and ret is not None:
             assert isinstance(ret, dict)
-            return ret.get(self.lang)
+            return ret.get(self.default_lang)
         return ret
 
     def get_str(self, file_dict_path_str):
         return self.get(*unserialize_dict_path(file_dict_path_str))
 
+class string_cache:
+    """reads a big json file instead of browsing the game files.
+
+    also provides the same interface as sparse_dict_path_reader, except it
+    has no reverse path, of course, but passes the extra fields instead"""
+    def __init__(self, default_lang = None):
+        self.data = {}
+        self.default_lang = default_lang
+    def load_from_file(self, filename, langs = None):
+        # a streaming parser would be ideal here... but this will do.
+        self.data = load_json(filename)
+        if langs is not None:
+            self.filter_lang(langs)
+    def filter_lang(self, langs):
+        for entry in self.data.values():
+            langlabel = entry["langlabel"]
+            for key in list(langlabel.keys()):
+                if key not in langs:
+                    del langlabel[key]
+    def iterate_drain(self):
+        for file_dict_path_str, entry in drain_dict(self.data):
+            splitted_path = unserialize_dict_path(file_dict_path_str)
+            yield entry["langlabel"], splitted_path, file_dict_path_str, entry
+    def iterate(self):
+        for file_dict_path_str, entry in self.data.items():
+            file_path, dict_path = unserialize_dict_path(file_dict_path_str)
+            yield entry["langlabel"], (file_path, dict_path), entry
+
+    def add(self, dict_file_path_str, lang_label_like, extra = {}):
+        entry = { "langlabel": lang_label_like}
+        entry.update(extra)
+        self.data[dict_file_path_str] = entry
+    def save_into_file(self, filename):
+        save_json(filename, self.data)
+    # sparse_dict_path_reader
+    def get_complete(self, file_path, dict_path):
+        file_dict_path_str = serialize_dict_path(file_path, dict_path)
+        ret = self.data.get(file_dict_path_str, {})
+        return (ret.get("langlabel"), (file_path, dict_path), ret)
+    def get_complete_by_str(self, file_dict_path_str):
+        file_path, dict_path = unserialize_dict_path(file_dict_path_str)
+        ret = self.data.get(file_dict_path_str, {})
+        return (ret.get("langlabel"), (file_path, dict_path), ret)
+    def get(self, file_path, dict_path):
+        return self.get_str(serialize_dict_path(file_path, dict_path))
+    def get_str(self, file_dict_path_str):
+        ret = self.data.get(file_dict_path_str)
+        if ret is None:
+            return None
+        return ret["langlabel"].get(self.default_lang)
+
 def transform_file_or_dir(input_path, output_path):
     """Browse all files in input_file and transform them into output_path.
 
     e.g. you can reimplement cp -r with:
-    for a,b in transform_file_or_dir(arg1, arg2):
-        open(a, "w").write(open(b).read()
+    for a,b,c in transform_file_or_dir(arg1, arg2):
+        open(a, "w").write(open(b).read())
 
     It supports the following cases:
     input | output | result

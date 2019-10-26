@@ -171,10 +171,8 @@ class RenderedText:
                                             repr(self.space))
 
 class Checker:
-    def __init__(self, gamepath, lang, check_settings):
-        gamepath = common.get_assets_path(gamepath)
-        self.sparse_reader = common.sparse_dict_path_reader(gamepath, lang)
-        self.lang = lang
+    def __init__(self, sparse_reader, check_settings):
+        self.sparse_reader = sparse_reader
 
         self.errors = 0
         self.parse_options(check_settings)
@@ -643,12 +641,15 @@ class Checker:
         for file_dict_path_str, trans in pack.get_all().items():
             comp = self.sparse_reader.get_complete_by_str(file_dict_path_str)
             orig_langlabel, (file_path, dict_path), reverse_path = comp
-            tags = tagger.find_tags(file_path, dict_path, reverse_path)
+            if isinstance(reverse_path, dict) and "tags" in reverse_path:
+                tags = reverse_path["tags"].split(' ')
+            else:
+                tags = tagger.find_tags(file_path, dict_path, reverse_path)
 
             if orig_langlabel is None:
                 orig_langlabel = {}
 
-            true_orig = orig_langlabel.get(self.sparse_reader.lang)
+            true_orig = orig_langlabel.get(self.sparse_reader.default_lang)
             orig = trans.get("orig")
             text = trans.get("text")
             if true_orig is None:
@@ -684,6 +685,7 @@ class Configuration:
     def __init__(self):
         self.reset()
         self.check()
+        self.string_cache = None
 
     @staticmethod
     def get_filter_from_components(array):
@@ -857,6 +859,22 @@ class Configuration:
             json[key] = getattr(self, key)
         common.save_json(filename, json)
 
+    def has_string_cache(self):
+        if self.string_cache is not None:
+            return True
+        return os.path.exists(self.string_cache_file)
+
+    def load_string_cache(self):
+        if self.string_cache is not None:
+            return self.string_cache
+        self.string_cache = common.string_cache(self.from_locale)
+        langs = frozenset(self.locales_to_show + [self.from_locale])
+        print("loading string cache %s"%(self.string_cache_file), end="...",
+              flush=True)
+        self.string_cache.load_from_file(self.string_cache_file, langs)
+        print(" ok")
+        return self.string_cache
+
     def iterate_over_game_files(self, other_filter):
         """iterate over the game files
 
@@ -889,26 +907,23 @@ class Configuration:
 
     def iterate_over_cache(self, other_filter):
         # a streaming parser would be ideal here... but this will do.
-        print("Loading string cache %s"%self.string_cache_file)
-        cache = common.load_json(self.string_cache_file)
-        for file_dict_path_str, values in common.drain_dict(cache):
+        drain = self.load_string_cache().iterate_drain()
+        for langlabel, (file_path, dict_path), file_dict_p_str, extra in drain:
 
-            file_p, dict_p = common.unserialize_dict_path(file_dict_path_str)
-            if not self.filter_file_path_func(file_p):
+            if not self.filter_file_path_func(file_path):
                 continue
-            if not self.filter_dict_path_func(dict_p):
+            if not self.filter_dict_path_func(dict_path):
                 continue
 
-            lang_label = values["langlabel"]
 
-            info = other_filter(file_dict_path_str, lang_label)
+            info = other_filter(file_dict_p_str, langlabel)
             if info is None:
                 continue
 
-            tags = values["tags"].split()
+            tags = extra["tags"].split()
             if not self.filter_tags_func(tags):
                 continue
-            yield file_dict_path_str, lang_label, tags, info
+            yield file_dict_p_str, langlabel, tags, info
 
     def get_trans_known_filter(self, packfile):
         """A filter suitable for other_filter that yield known translations
@@ -929,9 +944,14 @@ class Configuration:
 
     def iterate_over_configured_source(self, pack):
         other_filter = config.get_trans_known_filter(pack)
-        if os.path.exists(self.string_cache_file):
+        if self.has_string_cache():
             return self.iterate_over_cache(other_filter)
         return self.iterate_over_game_files(other_filter)
+
+    def get_sparse_reader(self):
+        if self.has_string_cache():
+            return self.load_string_cache()
+        return common.sparse_dict_path_reader(self.gamedir, self.from_locale)
 
     def get_trans_to_show(self, file_dict_path_str, lang_label, tags, known):
         """Return a (string, list<string>) containing stuff to translate.
@@ -1170,26 +1190,25 @@ def save_into_cache(config, pack):
     other_filter = config.get_trans_known_filter(pack)
     iterator = config.iterate_over_game_files(other_filter)
 
-    cache = {}
+    cache = common.string_cache()
     for file_dict_path_str, lang_label, tags, _ in iterator:
-        cache[file_dict_path_str] = {
-            "langlabel": lang_label,
-             "tags": " ".join(tags)
-        }
-    common.save_json(config.string_cache_file, cache)
+        cache.add(file_dict_path_str, lang_label, {"tags": " ".join(tags)})
+    cache.save_into_file(config.string_cache_file)
 
 if __name__ == '__main__':
     config, extra = parse_args()
 
     if extra["do_get"]:
-        sparse_reader = common.sparse_dict_path_reader(config.gamedir,
-                                                       config.from_locale)
+        sparse_reader = config.get_sparse_reader()
         complete = sparse_reader.get_complete_by_str(extra["do_get"])
-        langlabel, (file_path, dict_path), reverse = complete
+        langlabel, (file_path, dict_path), reverse_path = complete
         if not langlabel:
             print("Not found")
             sys.exit(1)
-        tags = tagger.find_tags(file_path, dict_path, reverse)
+        if isinstance(reverse_path, dict) and "tags" in reverse_path:
+            tags = reverse_path["tags"].split(" ")
+        else:
+            tags = tagger.find_tags(file_path, dict_path, reverse_path)
         printable, _ = config.get_trans_to_show(extra["do_get"], langlabel,
                                                 tags, None)
         print(printable)
@@ -1213,7 +1232,7 @@ if __name__ == '__main__':
     if extra["do_count"]:
         count_or_debug(config, extra, pack)
     if extra["do_check"]:
-        checker = Checker(config.gamedir, config.from_locale, extra["check"])
+        checker = Checker(config.get_sparse_reader(), extra["check"])
         if extra["check-asset-path"]:
             checker.check_assets(extra["check-asset-path"], config.from_locale)
         else:
