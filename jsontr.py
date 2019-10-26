@@ -29,7 +29,7 @@ class PackFile:
             on_each_text_load(entry)
 
     def save(self, filename):
-        print("Saving", end="...")
+        print("Saving", end="...", flush=True)
         try:
             os.rename(filename, filename+'~')
         except:
