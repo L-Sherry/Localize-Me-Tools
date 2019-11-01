@@ -66,7 +66,7 @@ def find_tags(file_path, dict_path, previous):
 
     return tags
 
-box_types_by_tags = {
+BOX_TYPES_BY_TAGS = {
         # quest descriptions in hub menu (exact)
         "quests-location": ('small', 'vbox', 238, 2),
         # approximation for item names (142 comes often, but includes the icon)
@@ -117,7 +117,7 @@ box_types_by_tags = {
 }
 def get_box_by_tags(tags):
     for tag in tags:
-        a = box_types_by_tags.get(tag)
-        if a is not None:
-            return a
+        box = BOX_TYPES_BY_TAGS.get(tag)
+        if box is not None:
+            return box
     return None

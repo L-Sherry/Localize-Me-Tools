@@ -16,7 +16,7 @@ import common
 
 class Encraption:
     """Encrapt stuff to protect against lawyers
-    
+
     Encrapt stuff so that lawyers cannot tell us we're distributing copyrighted
     stuff in the 'orig' and derived works in 'text' to people that don't
     have the original material.
@@ -71,10 +71,10 @@ class Encraption:
     @staticmethod
     def encrapt_trans(trans_object):
 
-        e = Encraption(trans_object['orig'])
+        enc = Encraption(trans_object['orig'])
         text = trans_object['text']
 
-        ret = { "ciphertext": e.encrapt_text(text), "mac": e.mac_text(text) }
+        ret = {"ciphertext": enc.encrapt_text(text), "mac": enc.mac_text(text)}
 
         quality = trans_object.get('quality')
         if quality is not None:
@@ -83,25 +83,25 @@ class Encraption:
             raise ValueError("Throw out this old file, bro")
         note = trans_object.get('note')
         if note:
-            ret["ciphernote"] = e.encrapt_text(note)
+            ret["ciphernote"] = enc.encrapt_text(note)
         return ret
 
     @staticmethod
     def decrapt_trans(trans_object, orig):
         if "text" in trans_object:
             raise ValueError("It's not encrypted ?")
-        e = Encraption(orig)
-        text = e.decrapt_text(trans_object["ciphertext"])
+        enc = Encraption(orig)
+        text = enc.decrapt_text(trans_object["ciphertext"])
         mac = trans_object.get("mac")
-        if mac is not None and mac != e.mac_text(text):
+        if mac is not None and mac != enc.mac_text(text):
             raise ValueError("MAC mismatch")
-        ret = { 'orig': orig, 'text': text }
+        ret = {'orig': orig, 'text': text}
         quality = trans_object.get("quality")
         if quality is not None:
             ret["quality"] = quality
         ciphernote = trans_object.get("ciphernote")
         if ciphernote is not None:
-            ret["note"] = e.decrapt_text(ciphernote)
+            ret["note"] = enc.decrapt_text(ciphernote)
         return ret
 
 def do_encrapt(args):
@@ -186,7 +186,6 @@ def do_split(args):
     big_pack = common.load_json(args.bigpack)
     map_file = common.load_json(args.mapfile)
     results = {}
-    old_file_path_str = None
     error = False
     for file_dict_path_str, trans in big_pack.items():
         file_path, _ = common.unserialize_dict_path(file_dict_path_str)
@@ -209,7 +208,7 @@ def do_split(args):
                   to_file_str)
             print("Aborting...")
             sys.exit(1)
-        
+
         actual_dir = os.path.join(args.outputpath, os.sep.join(to_file[:-1]))
         os.makedirs(actual_dir, exist_ok=True)
         common.save_json(os.path.join(actual_dir, to_file[-1]), smaller_pack)
@@ -219,9 +218,9 @@ def do_merge(args):
     big_result = {}
     error = False
     for usable_path, _ in common.walk_files(args.inputpath):
-        for s, value in common.load_json(usable_path).items():
-            if big_result.setdefault(s, value) != value:
-                print("Multiple different value found for", s)
+        for file_dict_path_str, value in common.load_json(usable_path).items():
+            if big_result.setdefault(file_dict_path_str, value) != value:
+                print("Multiple different value found for", file_dict_path_str)
                 error = True
     if error:
         if args.allow_mismatch:
@@ -277,8 +276,8 @@ def parse_args():
         kw.setdefault("metavar", "<%s dir or file>"%stuff)
         parser.add_argument("%spath"%stuff, **kw)
 
-    add_inputpath = lambda x,**kw: add_stuffpath("input", x, **kw)
-    add_outputpath = lambda x,**kw: add_stuffpath("output", x, **kw)
+    add_inputpath = lambda x, **kw: add_stuffpath("input", x, **kw)
+    add_outputpath = lambda x, **kw: add_stuffpath("output", x, **kw)
     add_bigpack = lambda x, halp: x.add_argument("bigpack",
                                                  metavar="<big pack>",
                                                  help=halp)
@@ -286,33 +285,33 @@ def parse_args():
 
     subparsers = parser.add_subparsers(metavar="COMMAND", required=True)
     encrapt = subparsers.add_parser(
-            'encrapt', help="encrypt one or multiple packfiles",
-            description="""read one or multiple pack files and write the
-                           encrapted output.  If the input is a directory, the
-                           output must be a directory.""")
-    add_inputpath(encrapt, help="""unencrypted pack file or directory 
-                                containing pack files""")
+        'encrapt', help="encrypt one or multiple packfiles",
+        description="""read one or multiple pack files and write the
+                       encrapted output.  If the input is a directory, the
+                       output must be a directory.""")
+    add_inputpath(encrapt, help="""unencrypted pack file or directory
+                                   containing pack files""")
     add_outputpath(encrapt, help="""where to write encrapted pack file(s)""")
     encrapt.set_defaults(func=do_encrapt)
 
 
     decrapt = subparsers.add_parser(
-            'decrapt', help="decrypt one or multiple packfiles",
-            description="""read one or multiple pack files and write the
-                           decrapted output.  This command requires --gamedir
-                           and --from-locale to be set correctly.  If the input
-                           is a directory, the output must be a directory.""")
+        'decrapt', help="decrypt one or multiple packfiles",
+        description="""read one or multiple pack files and write the
+                       decrapted output.  This command requires --gamedir
+                       and --from-locale to be set correctly.  If the input
+                       is a directory, the output must be a directory.""")
     add_inputpath(decrapt, help="""encrapted pack file or directory containing
                                    pack files""")
     add_outputpath(decrapt, help="""where to write decrapted pack file(s)""")
     decrapt.set_defaults(func=do_decrapt)
 
     make_map = subparsers.add_parser(
-            'mkmap', help="create a default map file for 'split'",
-            description="""Read a big packfile and write a map file
-                           with sensible default values.  The map file can then
-                           be customized manually afterward, or can be used
-                           with split as-is.""")
+        'mkmap', help="create a default map file for 'split'",
+        description="""Read a big packfile and write a map file
+                       with sensible default values.  The map file can then
+                       be customized manually afterward, or can be used
+                       with split as-is.""")
     add_bigpack(make_map, "pack file to use as a template to create the map")
     make_map.add_argument("--prefix", default="", help="""prefix to use before
                           packs.  e.g. if specifing mods/mymod/packs, then all
@@ -321,26 +320,26 @@ def parse_args():
     make_map.set_defaults(func=do_make_mapfile)
 
     split = subparsers.add_parser(
-            'split', help="split a big packfile into small ones",
-            description="""Read a big packfile and a map file and
-                           write several smaller packfile, controlled by the
-                           map file""")
+        'split', help="split a big packfile into small ones",
+        description="""Read a big packfile and a map file and
+                       write several smaller packfile, controlled by the
+                       map file""")
 
     add_bigpack(split, "pack file to split")
     add_stuffpath("output", split, metavar="<output dir>",
                   help="""where to write the smaller packs, according to the
                           map file""")
     split.add_argument("--strip", "-p", type=int, default=0,
-                        help="""strip this amount of directories before writing
-                        to the output. e.g. if the map file references
-                        mods/mymod/packs/a, then --strip=2 will write it as
-                        packs/a in the output directory.""")
+                       help="""strip this amount of directories before writing
+                       to the output. e.g. if the map file references
+                       mods/mymod/packs/a, then --strip=2 will write it as
+                       packs/a in the output directory.""")
     split.set_defaults(func=do_split)
 
     merge = subparsers.add_parser(
-            'merge', help="merge several packfiles into a big one",
-            description="""Merge all packfiles in a directory into a 
-                           bigger one.""")
+        'merge', help="merge several packfiles into a big one",
+        description="""Merge all packfiles in a directory into a
+                       bigger one.""")
     add_inputpath(merge, metavar="<input dir>",
                   help="""Where to search for packfiles""")
     add_bigpack(merge, """Where to write the big packfile""")
@@ -355,11 +354,11 @@ def parse_args():
     merge.set_defaults(func=do_merge)
 
     difflang = subparsers.add_parser(
-            'difflang', help="Calculate differences between two lang files",
-            description="""Given two lang files, calculate the difference as
-                           a pack file and write the output.  Lang files are
-                           files that typically resides under the lang/
-                           directory.""")
+        'difflang', help="Calculate differences between two lang files",
+        description="""Given two lang files, calculate the difference as
+                       a pack file and write the output.  Lang files are
+                       files that typically resides under the lang/
+                       directory.""")
     difflang.add_argument("--file-path",
                           dest="filename", metavar="<path of original name",
                           help="""Path to use to refer to the difference in the
@@ -379,5 +378,5 @@ def parse_args():
     result.func(result)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     parse_args()

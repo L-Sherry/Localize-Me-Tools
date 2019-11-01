@@ -1,6 +1,9 @@
 #!/usr/bin/python3
 
-import common, re, os, sys, argparse
+import re
+import os
+import sys
+import common
 
 from readliner import Readliner
 
@@ -19,7 +22,7 @@ class PackFile:
         # Statistics about badnesses
         self.quality_stats = {"bad":0, "incomplete":0, "unknown":0, "wrong":0}
 
-    def load(self, filename, on_each_text_load = lambda x: None):
+    def load(self, filename, on_each_text_load=lambda x: None):
         self.reset()
 
         self.translations = common.load_json(filename)
@@ -32,7 +35,7 @@ class PackFile:
         print("Saving", end="...", flush=True)
         try:
             os.rename(filename, filename+'~')
-        except:
+        except IOError:
             pass
         common.save_json(filename+".new", self.translations)
         os.rename(filename+".new", filename)
@@ -53,7 +56,7 @@ class PackFile:
     def get_by_orig(self, orig):
         return self.translation_index.get(orig)
 
-    def get(self, file_dict_path_str, orig_text = None):
+    def get(self, file_dict_path_str, orig_text=None):
         ret = self.translations.get(file_dict_path_str)
         if ret is None:
             return None
@@ -70,8 +73,7 @@ class PackFile:
             if isinstance(out_of, int) and out_of > 1:
                 return "%6i / %6i, %s (%.3f%%)"%(count, out_of, label,
                                                  100. * count / out_of)
-            else:
-                return "%6i %s"%(count, label)
+            return "%6i %s"%(count, label)
 
         ret = format_stat(strings, config.total_count, "translations") + '\n'
         desc = {"unknown": "strings of unchecked quality",
@@ -106,11 +108,11 @@ class CircularBuffer:
 
 class CommandParser:
     qualities_commands = (
-            ("/bad", "bad"),
-            ("/wro", "wrong"),
-            ("/miss", "incomplete"),
-            ("/unkn", "unknown"),
-            ("/note", None)
+        ("/bad", "bad"),
+        ("/wro", "wrong"),
+        ("/miss", "incomplete"),
+        ("/unkn", "unknown"),
+        ("/note", None)
     )
     @classmethod
     def parse_line_input(cls, line):
@@ -142,7 +144,7 @@ class CommandParser:
         """
         quality = trans.get("quality")
         note = trans.get("note")
-        text = trans["text"].replace('\n','\\n')
+        text = trans["text"].replace('\n', '\\n')
         if quality is None and note is None:
             return trans["text"]
         for command, maybe_quality in cls.qualities_commands:
@@ -190,14 +192,14 @@ class Checker:
         self.replacements = []
 
         make_repl = lambda regex, repl: (lambda s: regex.sub(repl, s))
-        for subst_regex in settings.get("replacements",()):
+        for subst_regex in settings.get("replacements", ()):
             if len(subst_regex) < len('s///'):
                 raise ValueError(
-                        "substution '%s' too short"%repr(substr_regex))
+                    "substution '%s' too short"%repr(subst_regex))
             splitted = subst_regex.split(subst_regex[1])
             if len(splitted) != 4 or splitted[0] != 's' or splitted[3]:
                 raise ValueError(
-                        "substitution '%s' has invalid syntax"%( subst_regex))
+                    "substitution '%s' has invalid syntax"%(subst_regex))
             try:
                 replace_func = make_repl(re.compile(splitted[1]), splitted[2])
                 replace_func("this is a test of your regex: œ")
@@ -207,8 +209,8 @@ class Checker:
                 self.replacements.append(replace_func)
 
         self.to_flag = []
-        make_matcher = lambda regex: (lambda s:regex.search(s) is not None)
-        for name, to_flag in settings.get("badnesses",{}).items():
+        make_matcher = lambda regex: (lambda s: regex.search(s) is not None)
+        for name, to_flag in settings.get("badnesses", {}).items():
             try:
                 regex = re.compile(to_flag)
             except:
@@ -230,10 +232,10 @@ class Checker:
         }
 
     severities_text = {
-        "error": "%sError%s"%(colors.get("red",""), colors["normal"]),
-        "warn": "%sWarning%s"%(colors.get("yellow",""), colors["normal"]),
-        "notice": "%sNotice%s"%(colors.get("green",""), colors["normal"]),
-        "note": "%sNote%s"%(colors.get("blue",""), colors["normal"])
+        "error": "%sError%s"%(colors.get("red", ""), colors["normal"]),
+        "warn": "%sWarning%s"%(colors.get("yellow", ""), colors["normal"]),
+        "notice": "%sNotice%s"%(colors.get("green", ""), colors["normal"]),
+        "note": "%sNote%s"%(colors.get("blue", ""), colors["normal"])
     }
 
     gamecolor = {
@@ -248,7 +250,7 @@ class Checker:
     }
 
     @staticmethod
-    def wrap_output(text, length, indentchar, indentcharwrap = None):
+    def wrap_output(text, length, indentchar, indentcharwrap=None):
         to_print = []
         if indentcharwrap is None:
             indentcharwrap = indentchar
@@ -257,17 +259,17 @@ class Checker:
                 return ""
             return indentchar if i else indentcharwrap
         for line in text.split('\n'):
-            to_print.extend( (indentbyindex(i) + line[i:i+length])
+            to_print.extend((indentbyindex(i) + line[i:i+length])
                              for i in range(0, len(line), length))
         return "\n".join(to_print)
 
     def print_error(self, file_dict_path_str, severity, error, text):
         # sadly, we can't give line numbers...
         print("%s: %s%s"%(self.severities_text.get(severity, severity),
-                         error, self.colors['normal']))
+                          error, self.colors['normal']))
         print("at %s"%(self.wrap_output(file_dict_path_str, 80-3, "\t\t")))
         print("   %s%s"%(self.wrap_output(text, 72, '\t', '   '),
-                        self.colors["normal"]))
+                         self.colors["normal"]))
         if severity == "error":
             self.errors += 1
 
@@ -275,7 +277,7 @@ class Checker:
     def iterate_escapes(string):
         last = 0
         index = string.find('\\')
-        while index >= 0 and index < len(string):
+        while 0 <= index < len(string):
             next_index = yield (last, index)
             if next_index is not None:
                 index = next_index
@@ -286,18 +288,17 @@ class Checker:
             index = string.find('\\', index)
         yield (last, len(string))
 
-    TEXT="TEXT"
-    DELAY="DELAY"
-    ESCAPE="ESCAPE"
-    COLOR="COLOR"
-    SPEED="SPEED"
-    VARREF="VARREF"
-    ICON="ICON"
+    TEXT = "TEXT"
+    DELAY = "DELAY"
+    ESCAPE = "ESCAPE"
+    COLOR = "COLOR"
+    SPEED = "SPEED"
+    VARREF = "VARREF"
+    ICON = "ICON"
 
     @classmethod
     def lex_that_text(cls, text, warn_func):
         iterator = cls.iterate_escapes(text)
-        last = 0
         for last_index, index in iterator:
             part = text[last_index:index]
             if part:
@@ -332,18 +333,18 @@ class Checker:
 
     variables = [
         (["lore", "title", "#1"], ["database.json"], ['lore', "#1", 'title']),
-        (["item", 0, "name"], ["item-database.json"],["items", 0, "name"]),
+        (["item", 0, "name"], ["item-database.json"], ["items", 0, "name"]),
         (["area", "#1", "name"], ["database.json"], ['areas', '#1', 'name']),
         (["area", "#1", "landmarks", "name", "#2"],
          ["database.json"], ['areas', '#1', 'landmarks', '#2', 'name']),
-        (["misc", "localNum", 0], lambda p,w:p[0], None),
+        (["misc", "localNum", 0], lambda param, warn: param[0], None),
         (["combat", "name", "#*"],
          ["database.json"], ['enemies', '#*', 'name']),
     ]
 
     def find_stuff_in_orig(self, orig, wanted_type):
         """find variable references in the original, without warning"""
-        for type_, value in self.lex_that_text(orig, lambda a,b: None):
+        for type_, value in self.lex_that_text(orig, lambda a, b: None):
             if type_ is wanted_type:
                 yield value
 
@@ -376,12 +377,12 @@ class Checker:
             params = self.match_var_params(template, normal_split, warn_func)
             if params is None:
                 continue
-            elif len(params) == 0:
-                return # entry has an error
+            if not params:
+                return None # entry has an error
 
             if callable(file_path):
                 return file_path(params, warn_func)
-            elif file_path is None:
+            if file_path is None:
                 return "(something)"
 
             dict_path = []
@@ -448,7 +449,7 @@ class Checker:
             elif type_ is self.COLOR:
                 actual_color = self.gamecolor.get(value)
                 if actual_color is None:
-                    warn_func("error", "bad \c[] command")
+                    warn_func("error", r"bad \c[] command")
                     continue
                 if value == current_color:
                     warn_func("warn", "same color assigned twice")
@@ -458,7 +459,7 @@ class Checker:
                     yield (ansi_color, "")
             elif type_ is self.SPEED:
                 if len(value) != 1 or value not in "01234567":
-                    warn_func("error", "bad \s[] command")
+                    warn_func("error", r"bad \s[] command")
                     continue
                 if result:
                     warn_func("notice", "speed not at start of text, unusal")
@@ -468,7 +469,7 @@ class Checker:
             elif type_ is self.ICON:
                 if value not in self.find_stuff_in_orig(orig, self.ICON):
                     warn_func("notice", "icon not present in original text")
-                yield ('','@')
+                yield ('', '@')
             elif type_ is self.VARREF:
                 value = self.lookup_var(value, warn_func, orig, get_text)
                 yield ('', value)
@@ -483,10 +484,9 @@ class Checker:
         next_nl = string.find('\n')
         if next_space == -1:
             return next_nl
-        elif next_nl == -1:
+        if next_nl == -1:
             return next_space
-        else:
-            return min(next_space, next_nl)
+        return min(next_space, next_nl)
 
     def collect_words(self):
         words = []
@@ -536,7 +536,7 @@ class Checker:
         spacesize = metrics.get(' ')
         width_limit = 999999 if boxtype[1] == "hbox" else boxtype[2]
 
-        lines=[]
+        lines = []
         current_line = RenderedText()
 
         for word in words:
@@ -578,7 +578,7 @@ class Checker:
             indication = None
             for charsize in range(len(bigline), 1, -1):
                 trimedsize = self.calc_string_size(bigline[:charsize], metrics,
-                                                   lambda *l:None)
+                                                   lambda *l: None)
 
                 if trimedsize < boxtype[2]:
                     indication = bigline[:charsize] + '[]' + bigline[charsize:]
@@ -593,7 +593,7 @@ class Checker:
 
     def check_text(self, file_path, dict_path, text, orig, tags, get_text):
         # it would be great if we had the tags here.
-        def print_please(severity, error, display_text = text):
+        def print_please(severity, error, display_text=text):
             file_dict_path_str = common.serialize_dict_path(file_path,
                                                             dict_path)
             self.print_error(file_dict_path_str, severity, error, display_text)
@@ -619,7 +619,7 @@ class Checker:
 
 
 
-    def check_pack(self, pack, from_locale):
+    def check_pack(self, pack):
 
         def get_text(file_path, dict_path, warn_func):
             file_dict_path_str = common.serialize_dict_path(file_path,
@@ -629,14 +629,12 @@ class Checker:
             if orig is None:
                 return None
             trans = pack.get(file_dict_path_str, orig)
-            if trans is not None:
-                return trans['text']
-            else:
+            if trans is None:
                 warn_func("notice",
                           "referenced path '%s' not translated yet"%(
                               file_dict_path_str))
                 return orig
-
+            return trans['text']
 
         for file_dict_path_str, trans in pack.get_all().items():
             comp = self.sparse_reader.get_complete_by_str(file_dict_path_str)
@@ -689,7 +687,7 @@ class Configuration:
 
     @staticmethod
     def get_filter_from_components(array):
-        if len(array) == 0:
+        if not array:
             return lambda x: True
         array_of_ands = []
         for x in array:
@@ -707,21 +705,21 @@ class Configuration:
         return check_filter
 
     default_options = {
-            "gamedir": ".",
-            "string_cache_file": "string_cache.json",
-            "from_locale": "en_US",
-            "show_locales": [],
-            "compose_chars": [],
-            "filter_file_path": [],
-            "filter_dict_path": [],
-            "filter_tags": [],
-            "ignore_known": True,
-            "ignore_unknown": False,
-            "allow_empty": False,
-            "editor": os.getenv("EDITOR") or "",
-            "packfile": "translations.pack.json",
-            "total_count": 0,
-            "unique_count": 0
+        "gamedir": ".",
+        "string_cache_file": "string_cache.json",
+        "from_locale": "en_US",
+        "show_locales": [],
+        "compose_chars": [],
+        "filter_file_path": [],
+        "filter_dict_path": [],
+        "filter_tags": [],
+        "ignore_known": True,
+        "ignore_unknown": False,
+        "allow_empty": False,
+        "editor": os.getenv("EDITOR") or "",
+        "packfile": "translations.pack.json",
+        "total_count": 0,
+        "unique_count": 0
     }
 
     def add_options_to_argparser(self, parser):
@@ -748,8 +746,8 @@ class Configuration:
                             the optional cache file.  If present, it will be
                             used instead of browsing through gamedir.""")
 
-        split_me_regex = re.compile('\s+')
-        listoflist = lambda string: split_me_regex.split(string)
+        split_me_regex = re.compile(r'\s+')
+        listoflist = split_me_regex.split
 
         parser.add_argument("--filter-file-path", nargs="+",
                             dest="filter_file_path", type=listoflist,
@@ -811,8 +809,8 @@ class Configuration:
                             help="""Pack file to create/edit/update. Required
                             """)
         parser.set_defaults(ignore_unknown=None, ignore_known=None,
-                            allow_empty=False, total_count = None,
-                            unique_count = None)
+                            allow_empty=False, total_count=None,
+                            unique_count=None)
     def update_with_argparse_result(self, result):
         for key in self.default_options.keys():
             value = getattr(result, key)
@@ -840,7 +838,7 @@ class Configuration:
         else:
             self.locales_to_show = self.show_locales
 
-    def load_from_file(self, filename, unknown_option = lambda k,v: False):
+    def load_from_file(self, filename, unknown_option=lambda key, val: False):
         json = common.load_json(filename)
         for key, value in json.items():
             if key not in self.default_options:
@@ -936,10 +934,9 @@ class Configuration:
             orig = lang_label[self.from_locale]
             if self.ignore_known and known and orig == known.get('orig'):
                 return None
-            if known:
-                return known
-            else:
+            if not known:
                 return False
+            return known
         return other_filter
 
     def iterate_over_configured_source(self, pack):
@@ -990,8 +987,8 @@ def spawn_editor(editor, pack, filename):
             # confusing otherwise.
             pack.load(config.packfile)
             return
-        except Exception as e:
-            print(e)
+        except Exception as exc:
+            print(exc)
             line = input("Press enter to reedit, or :q! to quit")
             if line.strip() == ':q!':
                 sys.exit(1)
@@ -1055,47 +1052,47 @@ def parse_args():
 
     subparser = parser.add_subparsers(metavar="COMMAND", required=True)
     continue_ = subparser.add_parser('continue', help="continue translating",
-                                  description="""Find strings to translate
-                                  then, for each of them, ask on the
-                                  terminal for a translation.
+                                     description="""Find strings to translate
+                                     then, for each of them, ask on the
+                                     terminal for a translation.
 
-                                  It is possible to enter the following
-                                  commands to tag the translation or perform
-                                  other actions:
+                                     It is possible to enter the following
+                                     commands to tag the translation or perform
+                                     other actions:
 
-                                  ':w' will save the transient results to
-                                  the pack file.  This is normally done
-                                  when exiting, but saving often is always
-                                  a good idea.
-                                  ':q' will save and quit, while ':e' will
-                                  save, open a text editor on the pack
-                                  file then reload it.
+                                     ':w' will save the transient results to
+                                     the pack file.  This is normally done
+                                     when exiting, but saving often is always
+                                     a good idea.
+                                     ':q' will save and quit, while ':e' will
+                                     save, open a text editor on the pack
+                                     file then reload it.
 
-                                  'omelette du fromage/bad' will be saved
-                                  as 'omelette du fromage' while indicating
-                                  that the translation is bad.  Similarly,
-                                  'orden de ???/miss' will indicate that
-                                  'orden de ???' is incomplete and
-                                  'traditore/unkn' will indicate that it is
-                                  unknown if 'traditore' is the correct
-                                  translation, e.g. because the gender it
-                                  applies to is currently unknown.
-                                  'Novemberfest/wro' will indicate that the
-                                  translation is wrong and does not match the
-                                  original text.
+                                     'omelette du fromage/bad' will be saved
+                                     as 'omelette du fromage' while indicating
+                                     that the translation is bad.  Similarly,
+                                     'orden de ???/miss' will indicate that
+                                     'orden de ???' is incomplete and
+                                     'traditore/unkn' will indicate that it is
+                                     unknown if 'traditore' is the correct
+                                     translation, e.g. because the gender it
+                                     applies to is currently unknown.
+                                     'Novemberfest/wro' will indicate that the
+                                     translation is wrong and does not match
+                                     the original text.
 
-                                  Adding text after '/miss', '/bad', '/unkn'
-                                  or '/note' will add a note to the
-                                  translation, maybe explaining why the
-                                  mark is set.  e.g.
-                                  "bolas/note needs to be gross"
+                                     Adding text after '/miss', '/bad', '/unkn'
+                                     or '/note' will add a note to the
+                                     translation, maybe explaining why the
+                                     mark is set.  e.g.
+                                     "bolas/note needs to be gross"
 
-                                  To insert a new line in the translated
-                                  text, use \\n. Note that tab completion
-                                  is available, and will complete to
-                                  words in any of the shown original text
-                                  or use compose characters.
-                                  """)
+                                     To insert a new line in the translated
+                                     text, use \\n. Note that tab completion
+                                     is available, and will complete to
+                                     words in any of the shown original text
+                                     or use compose characters.
+                                     """)
 
     save_config = subparser.add_parser("saveconfig",
                                        help="""create a config file with
@@ -1178,8 +1175,8 @@ def count_or_debug(config, extra, pack):
     print("Total strings:", count)
     print("Unique strings:", len(uniques))
     print("Most duplicated strings:")
-    for _,(s,c) in zip(range(10), sorted(uniques.items(), key=lambda x:x[1],
-                                         reverse=True)):
+    for _, (s, c) in zip(range(10), sorted(uniques.items(), key=lambda x: x[1],
+                                           reverse=True)):
         print("%d\t%s"%(c, s))
     sys.exit(0)
 
@@ -1236,7 +1233,7 @@ if __name__ == '__main__':
         if extra["check-asset-path"]:
             checker.check_assets(extra["check-asset-path"], config.from_locale)
         else:
-            checker.check_pack(pack, config.from_locale)
+            checker.check_pack(pack)
         sys.exit(1 if checker.errors else 0)
     if extra["do_cache"]:
         save_into_cache(config, pack)

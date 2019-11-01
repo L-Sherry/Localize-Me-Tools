@@ -6,7 +6,7 @@ class Readliner:
     # is only one readline module anyway
     def __init__(self):
         Readliner.compose_map = {}
-        Readliner.preload=""
+        Readliner.preload = ""
         Readliner.complete_array = []
         Readliner.history_to_add = []
         Readliner.history_start = 0
@@ -21,7 +21,7 @@ class Readliner:
             readline.set_completer_delims(" ")
 
         except:
-            Readliner.set_preload = lambda x:None
+            Readliner.set_preload = lambda x: None
             Readliner.readline = None
             print("'readline' not found. Some features are thus disabled !")
 
@@ -33,8 +33,8 @@ class Readliner:
             Readliner.preload = None
 
     @staticmethod
-    def prefill_text(x):
-        Readliner.preload = x
+    def prefill_text(text):
+        Readliner.preload = text
 
     @staticmethod
     def set_complete_array(arr):
@@ -75,6 +75,7 @@ class Readliner:
             if not state:
                 return candidate
             state -= 1
+        return None
 
     @staticmethod
     def has_history_support():
@@ -86,4 +87,3 @@ class Readliner:
     def add_history(text):
         if Readliner.readline is not None:
             Readliner.readline.add_history(text)
-

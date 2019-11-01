@@ -1,15 +1,23 @@
 #!/bin/echo This file is not meant to be executable:
 
-import os, os.path, json, sys
+import os
+import sys
+import json
+import os.path
 
-load_json = lambda p: json.load(open(p, encoding="utf-8"))
-save_json_to_fd = lambda fd, v: json.dump(v, fd, indent=8,
-                                          separators=(',',': '),
-                                          ensure_ascii=False)
+def load_json(path):
+    """Load a json file given a path"""
+    return json.load(open(path, encoding="utf-8"))
 
-save_json = lambda p, v: save_json_to_fd(open(p, 'w', encoding="utf-8"), v)
+def save_json_to_fd(fd, value):
+    """Save a readable json value into the given file descriptor."""
+    json.dump(value, fd, indent=8, separators=(',', ': '), ensure_ascii=False)
 
-if sys.version_info < (3,7):
+def save_json(path, value):
+    """Save a readable json value into the given path."""
+    save_json_to_fd(open(path, 'w', encoding="utf-8"), value)
+
+if sys.version_info < (3, 7):
     # a note about dicts and load/save_json:
     # Since Python 3.6, the CPython dict's new clever implementation comes with
     # the guarantees that the order of iteration is the order of insertion.
@@ -21,16 +29,16 @@ result will be unpredicable, which will cause problem when attempting to apply
 version control on the results or even when manually editing JSON files with
 another editor."""%sys.version, file=sys.stderr)
 
-def sort_dict(input_dict, recurse = False):
+def sort_dict(input_dict, recurse=False):
     """Return a dict with the same content as input_dict, but sorted.
 
     If recurse is true, then if the dict value is a dict, we also sort this
     dict, recusively."""
     res = {}
-    for k,v in sorted(input_dict.items(), key=lambda i:i[0]):
-        if recurse is True and isinstance(v, dict):
-            v = sort_dict(v, True)
-        res[k] = v
+    for key, value in sorted(input_dict.items(), key=lambda i: i[0]):
+        if recurse is True and isinstance(value, dict):
+            value = sort_dict(value, True)
+        res[key] = value
     return res
 
 def drain_dict(input_dict):
@@ -45,7 +53,7 @@ def drain_dict(input_dict):
     while array:
         yield array.pop()
 
-def walk_json_inner(json, dict_path = None, reverse_path = None):
+def walk_json_inner(json, dict_path=None, reverse_path=None):
     if dict_path is None:
         dict_path = []
     if reverse_path is None:
@@ -58,15 +66,15 @@ def walk_json_inner(json, dict_path = None, reverse_path = None):
     if isinstance(json, dict):
         iterable = json.items() # not sorted
     elif isinstance(json, list):
-        iterable = ((str(i), value) for i,value in enumerate(json))
+        iterable = ((str(i), value) for i, value in enumerate(json))
     else:
         return
     reverse_path.append(json)
-    for k,v in iterable:
-        dict_path.append(k)
-        yield from walk_json_inner(v, dict_path, reverse_path)
-        popped_k = dict_path.pop()
-        assert popped_k is k
+    for key, value in iterable:
+        dict_path.append(key)
+        yield from walk_json_inner(value, dict_path, reverse_path)
+        popped_key = dict_path.pop()
+        assert popped_key is key
     popped_json = reverse_path.pop()
     assert popped_json is json
 
@@ -80,10 +88,10 @@ def walk_json_filtered_inner(json, filterfunc):
         iterable = enumerate(json)
     else:
         return
-    for k,v in iterable:
-        inneriter = walk_json_filtered_inner(v, filterfunc)
+    for key, value in iterable:
+        inneriter = walk_json_filtered_inner(value, filterfunc)
         for to_yield, rev_dict_path, rev_reverse_path in inneriter:
-            rev_dict_path.append(str(k))
+            rev_dict_path.append(str(key))
             rev_reverse_path.append(json)
             yield to_yield, rev_dict_path, rev_reverse_path
 
@@ -105,9 +113,9 @@ def walk_langfile_json(json, lang):
             continue
         elif not isinstance(value, str):
             continue
-        yield { lang: value }, dict_path, reverse_path
+        yield {lang: value}, dict_path, reverse_path
 
-def walk_files(base_path, sort = True):
+def walk_files(base_path, sort=True):
     for dirpath, subdirs, filenames in os.walk(base_path, topdown=True):
         subdirs.sort()
         for name in sorted(filenames) if sort else filenames:
@@ -118,7 +126,7 @@ def walk_files(base_path, sort = True):
             yield usable_path, rel_path
 
 def walk_assets_for_translatables(base_path, orig_lang,
-                                  path_filter = lambda x: True):
+                                  path_filter=lambda x: True):
     for usable_path, rel_path in walk_files(base_path):
         file_path = rel_path.split(os.sep)
         if not path_filter(file_path):
@@ -160,10 +168,10 @@ def serialize_dict_path(file_path, dict_path):
     return "%s/%s"%("/".join(file_path), "/".join(dict_path))
 
 def unserialize_dict_path(dict_path_str):
-    l = dict_path_str.split('/')
-    for index, value in enumerate(l):
+    splitted = dict_path_str.split('/')
+    for index, value in enumerate(splitted):
         if value.endswith('.json'):
-            return (l[:index+1], l[index+1:])
+            return (splitted[:index+1], splitted[index+1:])
     raise ValueError("cannot unserialize that")
 
 
@@ -177,9 +185,8 @@ def get_assets_path(path):
         maybe = os.path.join(path, "assets")
         if os.path.isdir(maybe):
             return maybe
-        else:
-            raise ValueError("could not find game assets."
-                             " Searched in %s and %s/assets"%(path, path))
+        raise ValueError("could not find game assets."
+                         " Searched in %s and %s/assets"%(path, path))
     else:
         return path + ("%s.."%os.sep) * (len(realsplit) - index - 1)
 
@@ -192,12 +199,12 @@ class sparse_dict_path_reader:
 
     def load_file(self, file_path):
         if self.last_loaded == file_path:
-            return
+            return None
         usable_path = os.path.join(self.base_path, os.sep.join(file_path))
         try:
             self.last_data = load_json(usable_path)
-        except Exception as e:
-            print("Cannot find game file:", "/".join(file_path), ':', str(e))
+        except Exception as ex:
+            print("Cannot find game file:", "/".join(file_path), ':', str(ex))
             self.last_data = {}
         self.last_loaded = file_path
         return self.last_data
@@ -214,7 +221,7 @@ class sparse_dict_path_reader:
         if ret is not None:
             ret, reverse = ret
             if file_path[0] == 'lang':
-                ret = { self.default_lang: ret }
+                ret = {self.default_lang: ret}
         return (ret, (file_path, dict_path), reverse)
 
 
@@ -238,10 +245,10 @@ class string_cache:
 
     also provides the same interface as sparse_dict_path_reader, except it
     has no reverse path, of course, but passes the extra fields instead"""
-    def __init__(self, default_lang = None):
+    def __init__(self, default_lang=None):
         self.data = {}
         self.default_lang = default_lang
-    def load_from_file(self, filename, langs = None):
+    def load_from_file(self, filename, langs=None):
         # a streaming parser would be ideal here... but this will do.
         self.data = load_json(filename)
         if langs is not None:
@@ -261,9 +268,10 @@ class string_cache:
             file_path, dict_path = unserialize_dict_path(file_dict_path_str)
             yield entry["langlabel"], (file_path, dict_path), entry
 
-    def add(self, dict_file_path_str, lang_label_like, extra = {}):
-        entry = { "langlabel": lang_label_like}
-        entry.update(extra)
+    def add(self, dict_file_path_str, lang_label_like, extra=None):
+        entry = {"langlabel": lang_label_like}
+        if extra is not None:
+            entry.update(extra)
         self.data[dict_file_path_str] = entry
     def save_into_file(self, filename):
         save_json(filename, self.data)
