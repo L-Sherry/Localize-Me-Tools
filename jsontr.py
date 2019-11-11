@@ -1523,10 +1523,11 @@ if __name__ == '__main__':
     translator = Translator(config, pack, readliner)
 
     import signal
-    def sigint_once(sigint, frame):
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        signal.default_int_handler(sigint, frame)
-    signal.signal(signal.SIGINT, sigint_once)
+    if hasattr(signal, "SIGINT"):
+        def sigint_once(sigint, frame):
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            original_sigint_handler(sigint, frame)
+        original_sigint_handler = signal.signal(signal.SIGINT, sigint_once)
 
     try:
         try:
