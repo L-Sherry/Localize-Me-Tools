@@ -43,13 +43,22 @@ class PackFile:
         os.rename(filename+".new", filename)
         print(" ok.")
 
-    def add_quality_stat(self, entry):
+    def add_quality_stat(self, entry, shift=1):
         qual = entry.get("quality")
         if qual is not None:
-            self.quality_stats[qual] += 1
+            self.quality_stats[qual] += shift
+
+    def add_incomplete_translation(self, dict_path_str, orig,
+                                   incomplete_entry):
+        assert 'text' not in incomplete_entry
+        incomplete_entry["orig"] = orig
+        self.translations[dict_path_str] = incomplete_entry
+        self.add_quality_stat(incomplete_entry)
 
     def add_translation(self, dict_path_str, orig, new_entry):
         new_entry["orig"] = orig
+        if dict_path_str in self.translations:
+            self.add_quality_stat(self.translations[dict_path_str], -1)
         self.translations[dict_path_str] = new_entry
         self.add_quality_stat(new_entry)
         # this may erase duplicates, but may be more fitting to the context
@@ -139,11 +148,24 @@ class CommandParser:
         return ret
 
     @classmethod
+    def make_parsed(cls, text, quality=None, note=None, partial=None):
+        ret = {}
+        for key, value in (('text', text), ('quality', quality),
+                           ('note', note), ('partial', partial)):
+            if value is None:
+                continue
+            ret[key] = value
+        return ret
+
+    @classmethod
     def make_line_input(cls, trans):
         """The inverse of parse_line_input(trans).
 
         This round trip is guaranteed: parse_line_input(make_line_input(x))==x
         """
+
+        if "text" not in trans:
+            return ""
         quality = trans.get("quality")
         note = trans.get("note")
         # apparently readline handles \n just fine. Yet there is no way to
@@ -932,14 +954,29 @@ class Configuration:
 
         it will also reject unknown/known translation as configured"""
         def other_filter(file_dict_path_str, lang_label):
+            """Filter the entry depending on config and on what we know
+
+            Return None if we should not present the entry
+            return False if the entry should be presented
+            return a trans if the entry should be presented and prefilled
+            the trans may not have a 'text', in which case it is like
+            unknown, but still return it"""
             known = packfile.get(file_dict_path_str)
-            if self.ignore_unknown and not known:
-                return None
-            orig = lang_label[self.from_locale]
-            if self.ignore_known and known and orig == known.get('orig'):
-                return None
-            if not known:
+
+            if not known or (known and 'text' not in known):
+                if self.ignore_unknown:
+                    return None
+                if known:
+                    return known
                 return False
+            # so, known is not None and it has a text.
+
+            if known and lang_label[self.from_locale] == known.get('orig'):
+                if self.ignore_known:
+                    return None
+                return known
+
+            # if we are here, there is stale stuff.
             return known
         return other_filter
 
@@ -953,91 +990,324 @@ class Configuration:
         if self.has_string_cache():
             return self.load_string_cache()
         return common.sparse_dict_path_reader(self.gamedir, self.from_locale)
-
-    def get_trans_to_show(self, file_dict_path_str, lang_label, tags, known):
-        """Return a (string, list<string>) containing stuff to translate.
-
-        The first one is what to show to the user, the second one is a list
-        of original texts contained in the first one."""
-
-        string = "%s\ntags: %s\n"%(file_dict_path_str, " ".join(tags))
-        texts = []
-        if known:
-            our_orig = known.get('orig')
-            if our_orig and our_orig != lang_label[self.from_locale]:
-                string += "stale translation:\n"
-                string += "our orig :%s\n"%known['orig']
-                string += "our trans:%s\n"%known['text']
-
-        for locale in self.locales_to_show:
-            text = lang_label.get(locale)
-            if text is None:
-                string += "no %s\n"%locale
-            else:
-                texts.append(text)
-                string += "%s: %s\n"%(locale[:2], text)
-        return string, texts
+    def prune_langlabel(self, lang_label):
+        """Return a simpler locales_to_show"""
+        ret = dict.fromkeys(self.locales_to_show, None)
+        ret.update(common.filter_langlabel(lang_label, self.locales_to_show))
+        return ret
 
 
-def spawn_editor(editor, pack, filename):
-    if not config.editor:
-        print("No editor configured")
-        return
-    pack.save(config.packfile)
-    while True:
-        os.system("%s %s"%(config.editor, config.packfile))
-        try:
-            # not touching the history here, this is intentionnal, it gets
-            # confusing otherwise.
-            pack.load(config.packfile)
-            return
-        except Exception as exc:
-            print(exc)
-            line = input("Press enter to reedit, or :q! to quit")
-            if line.strip() == ':q!':
-                sys.exit(1)
-            continue
+class Translator:
+    def __init__(self, config, pack, readliner):
+        self.config = config
+        self.pack = pack
+        self.readliner = readliner
 
+        self.common_commands = {
+            'w': self.command_save,
+            'q': self.command_quit,
+            'wq': self.command_quit,
+            'e': self.command_spawn_editor,
+            's': self.command_show_stat,
+        }
 
-def ask_for_translation(config, pack, to_show):
-    prompt = to_show + "> "
-    while True:
-        line = input(prompt)
-        stripped = line.strip()
-        if stripped == ":w":
-            pack.save(config.packfile)
-        elif stripped in (":q", ":wq"):
-            raise KeyboardInterrupt()
-        elif stripped == ':e':
-            spawn_editor(config.editor, pack, config.packfile)
-        elif stripped == ':s':
-            print(pack.get_stats(config))
-        else:
-            break
-    return CommandParser.parse_line_input(line)
-
-def ask_for_multiple_translations(config, pack, iterator):
-    for file_dict_path_str, lang_label, tags, known in iterator:
-        to_show, origs = config.get_trans_to_show(file_dict_path_str,
-                                                  lang_label, tags, known)
-
+    def setup_autocomplete(self, strings):
         words = set()
-        for orig in origs:
-            for word in orig.replace('\n', ' ').split(' '):
-                words.add(word)
-        readliner.set_complete_array(words)
+        for text in strings:
+            if not text:
+                # filters None too
+                continue
+            for word in text.replace('\n', ' ').split(' '):
+                if word:
+                    words.add(word)
+        self.readliner.set_complete_array(words)
 
-        orig = lang_label[config.from_locale]
-        dup = pack.get_by_orig(orig)
-        if dup:
-            readliner.prefill_text(CommandParser.make_line_input(dup))
-        elif known:
-            readliner.prefill_text(CommandParser.make_line_input(known))
+    def setup_prefilled_text(self, stale, duplicate):
+        if duplicate:
+            prefill = CommandParser.make_line_input(duplicate)
+        elif stale and 'text' in stale:
+            prefill = CommandParser.make_line_input(stale)
+        else:
+            return
 
-        result = ask_for_translation(config, pack, to_show)
-        if not result["text"] and not config.allow_empty:
-            continue
-        pack.add_translation(file_dict_path_str, orig, result)
+        self.readliner.prefill_text(prefill)
+
+    @staticmethod
+    def format_trans_to_show(filtered_lang_label, tags=None, known=None,
+                             orig=None, file_dict_path_str=None):
+        string = ""
+        if file_dict_path_str is not None:
+            string += '%s\n' % (file_dict_path_str)
+        if tags is not None:
+            string += "%s\n" % (" ".join(tags))
+        if known and orig is not None:
+            if known['orig'] != orig and "text" in known:
+                string += "stale translation:\n"
+                string += "our orig :%s\n" % (known['orig'])
+                string += "our trans:%s\n" % (known['text'])
+        for locale, orig in filtered_lang_label.items():
+            if orig is None:
+                string += 'NO %s\n' % locale
+            else:
+                string += '%s: %s\n' % (locale[:2], orig)
+        return string
+
+    @staticmethod
+    def prompt_user(to_show, prompt, commands):
+        prompt = to_show + prompt
+        while True:
+            line = input(prompt)
+            stripped = line.strip()
+            if not stripped.startswith(':'):
+                return line
+            splitted = stripped.split(None, 1)
+            cmd = commands.get(splitted.pop(0)[1:])
+            if cmd is None:
+                return line
+            ret = cmd(splitted[0] if splitted else None)
+            if ret is not None:
+                return ret
+
+    def command_spawn_editor(self, ignored):
+        if not self.config.editor:
+            print("No editor configured")
+            return
+        self.pack.save(self.config.packfile)
+        while True:
+            os.system("%s %s" % (self.config.editor, self.config.packfile))
+            try:
+                # not touching the history here, this is intentionnal, it gets
+                # confusing otherwise.
+                self.pack.load(self.config.packfile)
+                return
+            except Exception as exc:
+                print(exc)
+                line = input("Press enter to reedit, or :q! to quit")
+                if line.strip() == ':q!':
+                    sys.exit(1)
+                continue
+
+    def command_save(self, ignored):
+        self.pack.save(self.config.packfile)
+
+    def command_show_stat(self, ignored):
+        print(self.pack.get_stats(self.config))
+
+    def command_quit(self, ignored):
+        raise KeyboardInterrupt()
+
+    # Ok, this deserve an explanation.
+    # just \.\s+ will fail on the following:
+    # "he sent an S.O.S. to me."
+    # "Please see Ms. Elizabeth."
+    # hence this hack.
+    SENTENCE_SPLITTER = re.compile(r'(?<=[^. ]{3})\.\s+|\n+')
+
+    @classmethod
+    def split_sentences(cls, text):
+        """Return text splitted into sentences.
+
+        Return is an odd-sized list of
+        [sentence, delimiter, sentence, delimiter, sentence]
+        sentence may be empty, especially the first or the last.
+        """
+        last_index = 0
+        intervaled = []
+        for match in cls.SENTENCE_SPLITTER.finditer(text):
+            begin, end = match.span()
+            intervaled.append(text[last_index:begin])
+            intervaled.append(text[begin:end])
+            last_index = end
+        intervaled.append(text[last_index:])
+        return intervaled
+
+    @staticmethod
+    def find_best_merge_sentence(intervaled, template):
+
+        # FIXME: use better alg if necessary.
+        if not intervaled[-1]:
+            intervaled.pop()
+            suffix = intervaled.pop()
+            # the suffix may be useless, let the user decide.
+            intervaled[-1] += suffix
+
+        def divergence(a, b): return (a-b)/(0.001+b)
+
+        while len(intervaled) > len(template):
+            best_score = 0
+            best_pos = None
+            for i in range(0, len(intervaled)-2, 2):
+                leni = len(intervaled[i])
+                lenwanted = len(template[i])
+                diverg_before = divergence(leni, lenwanted)
+                added = len(intervaled[i+1] + intervaled[i+2])
+                diverg_after = divergence(leni + added, lenwanted)
+
+                score = abs(diverg_before) / (abs(diverg_after) + 0.5)
+                if i + 1 < len(template) and intervaled[i+1] != template[i+1]:
+                    score += 1
+                if '\n' in intervaled[i+1]:
+                    score -= 1
+
+                if score > best_score:
+                    best_score = score
+                    best_pos = i
+
+            # merge
+            add = intervaled.pop(best_pos + 1)
+            add += intervaled.pop(best_pos + 1)
+            intervaled[best_pos] += add
+
+    @classmethod
+    def split_translation(cls, filtered_lang_label):
+        """Given a lang label, return an array of langlabels for each sentence
+
+        this method contains heuristics, use with care"""
+        splitted = {}
+        minsize = 99999999
+        minsizelocale = None
+        maxsize = 0
+        for locale, orig in filtered_lang_label.items():
+            if orig is None:
+                continue
+            intervaled = splitted[locale] = cls.split_sentences(orig)
+            splits = len(intervaled)
+            if splits < minsize:
+                minsize = splits
+                minsizelocale = locale
+            maxsize = max(maxsize, splits)
+
+        if minsizelocale and minsize != maxsize:
+            template = splitted[minsizelocale]
+            for locale, split in splitted.items():
+                cls.find_best_merge_sentence(split, template)
+        # splitted is a langlabel of arrays
+        # turn it into an array of langlabels
+        ret = [dict() for x in range(minsize)]
+        for locale, array_of_part in splitted.items():
+            assert len(array_of_part) == minsize
+            for i, part in enumerate(array_of_part):
+                ret[i][locale] = part
+
+        return ret
+
+    def prompt_splitted_trans(self, lang_label, index, count,
+                              partial_known=None):
+        if not any(lang_label):
+            # don't bother asking.
+            return CommandParser.parse_line_input("")
+        if partial_known is not None:
+            # that or autofilling it, though choice, let's see how it goes.
+            self.readliner.prefill_text(partial_known)
+        to_show = self.format_trans_to_show(lang_label)
+        to_show = "---- Part %s / %s\n%s"%(index, count, to_show)
+        res = self.prompt_user(to_show, "%s> " % index, self.common_commands)
+        if not res:
+            return None
+        return res.strip()
+
+    QUALITY_SORT = {
+        None: 0,
+        'note': 0,
+        'unknown': 1,
+        'bad': 2,
+        'incomplete': 3,
+        'wrong': 4
+    }
+
+    def command_split_trans(self, file_dict_path_str, filtered_lang_label,
+                            orig, known):
+        splitted = self.split_translation(filtered_lang_label)
+        known_partial = [] if not known else known.get("partial", [])
+        partial = []
+        results = []
+        count = 1 + len(splitted) // 2
+        for index in range(count):
+            lang_label_part = splitted[index * 2]
+            known_part = None
+            if index < len(known_partial):
+                known_part = known_partial[index]
+
+            res = self.prompt_splitted_trans(lang_label_part, 1 + index, count,
+                                             known_part)
+            partial.append(res)
+            if res is None:
+                results.append(None)
+            else:
+                results.append(CommandParser.parse_line_input(res))
+
+            # add this so that saving works in the middle.
+            self.pack.add_incomplete_translation(file_dict_path_str, orig,
+                                                 {'partial': partial})
+
+        if None not in results:
+            trans = self.merge_splitted_trans(file_dict_path_str, splitted,
+                                              results)
+            self.readliner.prefill_text(CommandParser.make_line_input(trans))
+
+        return None
+
+    def merge_splitted_trans(self, file_dict_path_str, intervaled, results):
+        text = ""
+        quality = None
+        quality_score = self.QUALITY_SORT[quality]
+        notes = []
+        for index, result in enumerate(results):
+            text += result['text']
+            if index * 2 + 1 < len(intervaled):
+                text += next(iter(intervaled[index * 2 + 1].values()))
+            if 'quality' not in result and 'note' not in result:
+                continue
+
+            notes.append("[%s]: %s (%s)" % (result['text'],
+                                            result.get('quality', 'note'),
+                                            result.get('note', '')))
+            if 'quality' in result:
+                new_quality_score = self.QUALITY_SORT[result['quality']]
+                if new_quality_score > quality_score:
+                    quality_score = new_quality_score
+                    quality = result['quality']
+        if notes:
+            notes = ", ".join(notes)
+        else:
+            notes = None
+        return CommandParser.make_parsed(text=text, quality=quality,
+                                         note=notes)
+
+    def curry_command_split_trans(self, *args):
+        return lambda ignored: self.command_split_trans(*args)
+
+    def ask_for_complete_trans(self, file_dict_path_str,
+                               filtered_lang_label, tags, known, duplicate,
+                               orig):
+        to_show = self.format_trans_to_show(filtered_lang_label, tags, known,
+                                            orig, file_dict_path_str)
+        self.setup_autocomplete(filtered_lang_label.values())
+        self.setup_prefilled_text(known, duplicate)
+
+        commands = dict(self.common_commands)
+        commands['split'] = self.curry_command_split_trans(file_dict_path_str,
+                                                           filtered_lang_label,
+                                                           orig, known)
+
+        if known and "text" not in known and "partial" in known:
+            self.command_split_trans(file_dict_path_str, filtered_lang_label,
+                                     orig, known)
+
+        string = self.prompt_user(to_show, '> ', commands)
+        if not string and not self.config.allow_empty:
+            return
+        trans = CommandParser.parse_line_input(string)
+        pack.add_translation(file_dict_path_str, orig, trans)
+
+    def ask_for_multiple_translations(self, iterator):
+        for file_dict_path_str, lang_label, tags, known in iterator:
+            lang_label_to_show = self.config.prune_langlabel(lang_label)
+            orig = lang_label[self.config.from_locale]
+
+            dup = pack.get_by_orig(orig)
+            self.ask_for_complete_trans(file_dict_path_str, lang_label_to_show,
+                                        tags, known, dup, orig)
 
 def parse_args():
     import argparse
@@ -1197,23 +1467,28 @@ def save_into_cache(config, pack):
         cache.add(file_dict_path_str, lang_label, {"tags": " ".join(tags)})
     cache.save_into_file(config.string_cache_file)
 
+def print_lang_label(config, file_dict_path_str):
+    sparse_reader = config.get_sparse_reader()
+    complete = sparse_reader.get_complete_by_str(file_dict_path_str)
+    langlabel, (file_path, dict_path), reverse_path = complete
+    if not langlabel:
+        print("Not found")
+        sys.exit(1)
+    if isinstance(reverse_path, dict) and "tags" in reverse_path:
+        tags = reverse_path["tags"].split(" ")
+    else:
+        tags = tagger.find_tags(file_path, dict_path, reverse_path)
+    langlabel = config.prune_langlabel(langlabel)
+    a = Translator.format_trans_to_show(langlabel, tags=tags,
+                                        file_dict_path_str=file_dict_path_str)
+    print(a)
+
+
 if __name__ == '__main__':
     config, extra = parse_args()
 
     if extra["do_get"]:
-        sparse_reader = config.get_sparse_reader()
-        complete = sparse_reader.get_complete_by_str(extra["do_get"])
-        langlabel, (file_path, dict_path), reverse_path = complete
-        if not langlabel:
-            print("Not found")
-            sys.exit(1)
-        if isinstance(reverse_path, dict) and "tags" in reverse_path:
-            tags = reverse_path["tags"].split(" ")
-        else:
-            tags = tagger.find_tags(file_path, dict_path, reverse_path)
-        printable, _ = config.get_trans_to_show(extra["do_get"], langlabel,
-                                                tags, None)
-        print(printable)
+        print_lang_label(config, extra["do_get"])
         sys.exit(0)
 
     pack = PackFile()
@@ -1245,6 +1520,7 @@ if __name__ == '__main__':
         sys.exit(0)
 
     readliner.set_compose_map(config.compose_chars)
+    translator = Translator(config, pack, readliner)
 
     import signal
     def sigint_once(sigint, frame):
@@ -1255,7 +1531,7 @@ if __name__ == '__main__':
     try:
         try:
             iterator = config.iterate_over_configured_source(pack)
-            ask_for_multiple_translations(config, pack, iterator)
+            translator.ask_for_multiple_translations(iterator)
         except EOFError:
             pass
         except KeyboardInterrupt:

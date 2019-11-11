@@ -240,6 +240,12 @@ class sparse_dict_path_reader:
     def get_str(self, file_dict_path_str):
         return self.get(*unserialize_dict_path(file_dict_path_str))
 
+def filter_langlabel(lang_label, langs):
+    for key in list(lang_label.keys()):
+        if key not in langs:
+            del lang_label[key]
+    return lang_label
+
 class string_cache:
     """reads a big json file instead of browsing the game files.
 
@@ -255,10 +261,7 @@ class string_cache:
             self.filter_lang(langs)
     def filter_lang(self, langs):
         for entry in self.data.values():
-            langlabel = entry["langlabel"]
-            for key in list(langlabel.keys()):
-                if key not in langs:
-                    del langlabel[key]
+            filter_langlabel(entry["langlabel"], langs)
     def iterate_drain(self):
         for file_dict_path_str, entry in drain_dict(self.data):
             splitted_path = unserialize_dict_path(file_dict_path_str)
