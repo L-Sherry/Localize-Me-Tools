@@ -1,5 +1,6 @@
 import re
 
+
 class Readliner:
     """Interface to the readline module."""
     # most of the stuff are static because the hook is static ... and there
@@ -80,8 +81,6 @@ class Readliner:
     @staticmethod
     def has_history_support():
         return Readliner.readline is not None
-
-    #has_history_support = staticmethod(lambda: Readliner.readline is not None)
 
     @staticmethod
     def add_history(text):

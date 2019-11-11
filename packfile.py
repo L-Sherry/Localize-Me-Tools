@@ -14,6 +14,7 @@ except:
 
 import common
 
+
 class Encraption:
     """Encrapt stuff to protect against lawyers
 
@@ -60,7 +61,7 @@ class Encraption:
             print("decrapt:", repr(padded_text), "with key", repr(self.key))
             print("FAIIIIIIIIIIIIIIIIL")
             raise ValueError("bad pcks7 padding")
-        #print("decrapt[:-pad]:", repr(padded_text[:-pad_length]))
+        # print("decrapt[:-pad]:", repr(padded_text[:-pad_length]))
         return padded_text[:-pad_length].decode('utf-8')
 
     def mac_text(self, text):
@@ -79,7 +80,8 @@ class Encraption:
         quality = trans_object.get('quality')
         if quality is not None:
             ret["quality"] = quality
-        if "reason" in trans_object: # was equivalent to 'note'
+        if "reason" in trans_object:
+            # was equivalent to 'note'
             raise ValueError("Throw out this old file, bro")
         note = trans_object.get('note')
         if note:
@@ -103,6 +105,7 @@ class Encraption:
         if ciphernote is not None:
             ret["note"] = enc.decrapt_text(ciphernote)
         return ret
+
 
 def do_encrapt(args):
     try:
@@ -140,6 +143,7 @@ def do_encrapt(args):
     if error:
         sys.exit(1)
 
+
 def do_decrapt(args):
     game_reader = common.sparse_dict_path_reader(args.gamedir, args.fromlocale)
     iterator = common.transform_file_or_dir(args.inputpath, args.outputpath)
@@ -152,10 +156,11 @@ def do_decrapt(args):
             continue
         result = {}
         for file_dict_path_str, value in json.items():
-            #print("filedictpath", repr(file_dict_path_str))
+            # print("filedictpath", repr(file_dict_path_str))
             orig = game_reader.get_str(file_dict_path_str)
             if orig is None:
-                print("Cannot read original translation at", file_dict_path_str)
+                print("Cannot read original translation at",
+                      file_dict_path_str)
                 error = True
                 continue
             try:
@@ -170,6 +175,7 @@ def do_decrapt(args):
     if error:
         sys.exit(1)
 
+
 def do_make_mapfile(args):
     json = common.load_json(args.bigpack)
     result = {}
@@ -181,6 +187,7 @@ def do_make_mapfile(args):
         path = "/".join(file_path)
         result[path] = prefix + path
     common.save_json(args.mapfile, result)
+
 
 def do_split(args):
     big_pack = common.load_json(args.bigpack)
@@ -374,7 +381,6 @@ def parse_args():
     difflang.set_defaults(func=do_diff_langfile)
 
     result = parser.parse_args()
-    #print(vars(result))
     result.func(result)
 
 

@@ -9,6 +9,7 @@ from readliner import Readliner
 
 import tags as tagger
 
+
 class PackFile:
     def __init__(self):
         self.reset()
@@ -20,7 +21,8 @@ class PackFile:
         # Index from orig to an object in self.translations
         self.translation_index = {}
         # Statistics about badnesses
-        self.quality_stats = {"bad":0, "incomplete":0, "unknown":0, "wrong":0}
+        self.quality_stats = {"bad": 0, "incomplete": 0,
+                              "unknown": 0, "wrong": 0}
 
     def load(self, filename, on_each_text_load=lambda x: None):
         self.reset()
@@ -144,7 +146,9 @@ class CommandParser:
         """
         quality = trans.get("quality")
         note = trans.get("note")
-        text = trans["text"].replace('\n', '\\n')
+        # apparently readline handles \n just fine. Yet there is no way to
+        # make it insert one... or is it ?
+        # text = trans["text"].replace('\n', '\\n')
         if quality is None and note is None:
             return trans["text"]
         for command, maybe_quality in cls.qualities_commands:
@@ -1129,7 +1133,8 @@ def parse_args():
                                       reading from them is faster later on.
                                       Note that the filtering/ignoring options
                                       will also affect the content of the cache
-                                      so the cache should be a super-set of the                                       filtering options that are used later on.
+                                      so the cache should be a super-set of the
+                                      filtering options that are used later on.
                                       """)
     save_cache.set_defaults(save_cache=True)
 
@@ -1254,8 +1259,6 @@ if __name__ == '__main__':
         except EOFError:
             pass
         except KeyboardInterrupt:
-            import signal
-            signal
             pass
     finally:
         pack.save(config.packfile)
