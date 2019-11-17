@@ -1129,7 +1129,9 @@ class Translator:
         while len(intervaled) > len(template):
             best_score = 0
             best_pos = None
-            for i in range(0, len(intervaled)-2, 2):
+            # unfortunately, we need to merge the first part first... and
+            # thus ignore the end.
+            for i in range(0, len(template)-2, 2):
                 leni = len(intervaled[i])
                 lenwanted = len(template[i])
                 diverg_before = divergence(leni, lenwanted)
