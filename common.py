@@ -246,6 +246,13 @@ def filter_langlabel(lang_label, langs):
             del lang_label[key]
     return lang_label
 
+def trim_annotations(text):
+    for endmark in ('<<C<<', '<<A<<'):
+        index = text.find(endmark)
+        if index != -1:
+            return text[:index]
+    return text
+
 class string_cache:
     """reads a big json file instead of browsing the game files.
 

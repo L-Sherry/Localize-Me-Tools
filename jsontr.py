@@ -437,19 +437,12 @@ class Checker:
         warn_func("warn", "unknown variable %s not in original"%name)
         return "(error)"
 
-    def trim_annotations(self, text):
-        for endmark in ('<<C<<', '<<A<<'):
-            index = text.find(endmark)
-            if index != -1:
-                return text[:index]
-        return text
-
     def do_text_replacements(self, text, warn_func):
         for flagname, flagfunc in self.to_flag:
             if flagfunc(text):
                 warn_func("warn", "badness '%s' in text before substs"%flagname)
 
-        text = self.trim_annotations(text)
+        text = common.trim_annotations(text)
         for repl in self.replacements:
             text = repl(text)
 
@@ -1169,6 +1162,9 @@ class Translator:
         maxsize = 0
         for locale, orig in filtered_lang_label.items():
             if orig is None:
+                continue
+            orig = common.trim_annotations(orig)
+            if not orig:
                 continue
             intervaled = splitted[locale] = cls.split_sentences(orig)
             splits = len(intervaled)
