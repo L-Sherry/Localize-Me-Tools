@@ -1170,6 +1170,8 @@ class Translator:
                 continue
             intervaled = splitted[locale] = cls.split_sentences(orig)
             splits = len(intervaled)
+            if splits == 1:
+                continue # this would defeat the purpose.
             if splits < minsize:
                 minsize = splits
                 minsizelocale = locale
@@ -1179,6 +1181,8 @@ class Translator:
             template = splitted[minsizelocale]
             for locale, split in splitted.items():
                 cls.find_best_merge_sentence(split, template)
+        elif minsizelocale is None:
+            return [filtered_lang_label]
         # splitted is a langlabel of arrays
         # turn it into an array of langlabels
         ret = [dict() for x in range(minsize)]
