@@ -1094,7 +1094,7 @@ class Translator:
     # "he sent an S.O.S. to me."
     # "Please see Ms. Elizabeth."
     # hence this hack.
-    SENTENCE_SPLITTER = re.compile(r'(?<=[^. ]{3})\.\s+|\n+')
+    SENTENCE_SPLITTER = re.compile(r'((?<=[^. ]{3})\.|[?!]+)\s+|\n+')
 
     @classmethod
     def split_sentences(cls, text):
