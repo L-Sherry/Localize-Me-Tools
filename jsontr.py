@@ -1168,10 +1168,11 @@ class Translator:
             orig = common.trim_annotations(orig)
             if not orig:
                 continue
-            intervaled = splitted[locale] = cls.split_sentences(orig)
+            intervaled = cls.split_sentences(orig)
             splits = len(intervaled)
             if splits == 1:
                 continue # this would defeat the purpose.
+            splitted[locale] = intervaled
             if splits < minsize:
                 minsize = splits
                 minsizelocale = locale
