@@ -1006,14 +1006,22 @@ class Translator:
 
     def setup_autocomplete(self, strings):
         words = set()
+        string_set = set()
         for text in strings:
             if not text:
                 # filters None too
                 continue
+            string_set.add(text)
             for word in text.replace('\n', ' ').split(' '):
                 if word:
                     words.add(word)
         self.readliner.set_complete_array(words)
+
+        if len(string_set) == 1:
+            entire_completion = string_set.pop()
+        else:
+            entire_completion = ""
+        self.readliner.set_entire_completion_string(entire_completion)
 
     def setup_prefilled_text(self, stale, duplicate):
         if duplicate:

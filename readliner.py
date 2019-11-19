@@ -8,6 +8,7 @@ class Readliner:
     def __init__(self):
         Readliner.compose_map = {}
         Readliner.preload = ""
+        Readliner.entire_completion_string = None
         Readliner.complete_array = []
         Readliner.history_to_add = []
         Readliner.history_start = 0
@@ -41,6 +42,10 @@ class Readliner:
     def set_complete_array(arr):
         Readliner.complete_array = arr if arr.__class__ == list else list(arr)
 
+    @staticmethod
+    def set_entire_completion_string(string):
+        Readliner.entire_completion_string = str(string)
+
     # TODO: should be able to choose the escapes chars
     compose_re = re.compile('[$|](..)')
 
@@ -65,6 +70,10 @@ class Readliner:
 
     @staticmethod
     def completer_hook(text, state):
+        if (Readliner.entire_completion_string and
+                not Readliner.readline.get_line_buffer()):
+            return Readliner.entire_completion_string if state == 0 else None
+
         # TODO: should make this more dynamic, like, it would be great to
         # complete the various text replacements.
         expanded = Readliner.expand_compose(text)
