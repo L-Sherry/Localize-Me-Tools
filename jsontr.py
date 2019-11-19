@@ -1053,11 +1053,10 @@ class Translator:
                 string += '%s: %s\n' % (locale[:2], orig)
         return string
 
-    @staticmethod
-    def prompt_user(to_show, prompt, commands):
+    def prompt_user(self, to_show, prompt, commands):
         prompt = to_show + prompt
         while True:
-            line = input(prompt)
+            line = self.readliner.read_line(prompt)
             stripped = line.strip()
             if not stripped.startswith(':'):
                 return line

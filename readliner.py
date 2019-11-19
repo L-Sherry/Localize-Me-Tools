@@ -29,6 +29,7 @@ class Readliner:
 
     @staticmethod
     def pre_input_hook():
+        Readliner.readline_active = True
         if Readliner.preload:
             Readliner.readline.insert_text(Readliner.preload)
             Readliner.readline.redisplay()
@@ -95,3 +96,14 @@ class Readliner:
     def add_history(text):
         if Readliner.readline is not None:
             Readliner.readline.add_history(text)
+
+    @staticmethod
+    def read_line(prompt):
+        Readliner.readline_active = False
+        line = input(prompt)
+        if not Readliner.readline_active:
+            if not line and Readliner.preload is not None:
+                line = Readliner.preload
+            elif line == '\t':
+                line = Readliner.entire_completion_string
+        return line
