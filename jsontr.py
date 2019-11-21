@@ -4,6 +4,7 @@ import re
 import os
 import sys
 import common
+import itertools
 
 from readliner import Readliner
 
@@ -1109,7 +1110,9 @@ class Translator:
 
         Return is an odd-sized list of
         [sentence, delimiter, sentence, delimiter, sentence]
-        sentence may be empty, especially the first or the last.
+        sentence may be empty, especially the first.
+
+        The last is never empty, unless it is also the first.
         """
         last_index = 0
         intervaled = []
@@ -1119,46 +1122,64 @@ class Translator:
             intervaled.append(text[begin:end])
             last_index = end
         intervaled.append(text[last_index:])
+
+        if len(intervaled) > 1 and not intervaled[-1].strip():
+            end = intervaled.pop()
+            sep = intervaled.pop()
+            intervaled[-1] += sep + end
+
         return intervaled
 
     @staticmethod
-    def find_best_merge_sentence(intervaled, template):
+    def score_similarity(merged, template):
+        """Return a similarity score between candidate 'merged' and 'template'
 
-        # FIXME: use better alg if necessary.
-        if not intervaled[-1]:
-            intervaled.pop()
-            suffix = intervaled.pop()
-            # the suffix may be useless, let the user decide.
-            intervaled[-1] += suffix
+        lower is better."""
+        assert len(merged) == len(template)
 
-        def divergence(a, b): return (a-b)/(0.001+b)
+        def divergence(a, b): return abs((a-b)/(0.001+b))
 
-        while len(intervaled) > len(template):
-            best_score = 0
-            best_pos = None
-            # unfortunately, we need to merge the first part first... and
-            # thus ignore the end.
-            for i in range(0, len(template)-2, 2):
-                leni = len(intervaled[i])
-                lenwanted = len(template[i])
-                diverg_before = divergence(leni, lenwanted)
-                added = len(intervaled[i+1] + intervaled[i+2])
-                diverg_after = divergence(leni + added, lenwanted)
-
-                score = abs(diverg_before) / (abs(diverg_after) + 0.5)
-                if i + 1 < len(template) and intervaled[i+1] != template[i+1]:
+        score = 0
+        for i, (proposed, original) in enumerate(zip(merged, template)):
+            if i & 1:
+                if proposed != original:
                     score += 1
-                if '\n' in intervaled[i+1]:
-                    score -= 1
+            else:
+                score += divergence(len(proposed), len(original))
+                if '\n' in proposed and '\n' not in original:
+                    score += 1
+        return score
 
-                if score > best_score:
-                    best_score = score
-                    best_pos = i
+    @classmethod
+    def find_best_merge_sentence(cls, intervaled, template):
+        number_of_possible_merges = len(intervaled)//2
+        merge_positions = range(number_of_possible_merges)
+        number_of_merges = number_of_possible_merges - len(template)//2
 
-            # merge
-            add = intervaled.pop(best_pos + 1)
-            add += intervaled.pop(best_pos + 1)
-            intervaled[best_pos] += add
+        best_merge = None
+        best_score = None
+
+        # This is inefficient, but still more than the brain of the user.
+        for combination in itertools.combinations(merge_positions,
+                                                  number_of_merges):
+            new_intervaled = intervaled[:]
+            for merges_done, index_to_merge in enumerate(combination):
+                index = (index_to_merge - merges_done)*2
+                add = new_intervaled.pop(index+1)
+                add += new_intervaled.pop(index+1)
+                new_intervaled[index] += add
+
+            score = cls.score_similarity(new_intervaled, template)
+            if best_score is None or score < best_score:
+                best_merge = new_intervaled
+                best_score = score
+
+        if best_merge is not None:
+            print("Merge %s -> %s, score: %.2f" % (number_of_possible_merges,
+                                                   len(template)//2,
+                                                   best_score))
+            intervaled.clear()
+            intervaled.extend(best_merge)
 
     @classmethod
     def split_translation(cls, filtered_lang_label):
@@ -1178,7 +1199,8 @@ class Translator:
             intervaled = cls.split_sentences(orig)
             splits = len(intervaled)
             if splits == 1:
-                continue # this would defeat the purpose.
+                # this would defeat the purpose.
+                continue
             splitted[locale] = intervaled
             if splits < minsize:
                 minsize = splits
@@ -1188,7 +1210,8 @@ class Translator:
         if minsizelocale and minsize != maxsize:
             template = splitted[minsizelocale]
             for locale, split in splitted.items():
-                cls.find_best_merge_sentence(split, template)
+                if len(split) != len(template):
+                    cls.find_best_merge_sentence(split, template)
         elif minsizelocale is None:
             return [filtered_lang_label]
         # splitted is a langlabel of arrays
@@ -1210,7 +1233,7 @@ class Translator:
             # that or autofilling it, though choice, let's see how it goes.
             self.readliner.prefill_text(partial_known)
         to_show = self.format_trans_to_show(lang_label)
-        to_show = "---- Part %s / %s\n%s"%(index, count, to_show)
+        to_show = "---- Part %s / %s\n%s" % (index, count, to_show)
         res = self.prompt_user(to_show, "%s> " % index, self.common_commands)
         if not res:
             return None
@@ -1318,6 +1341,7 @@ class Translator:
             dup = pack.get_by_orig(orig)
             self.ask_for_complete_trans(file_dict_path_str, lang_label_to_show,
                                         tags, known, dup, orig)
+
 
 def parse_args():
     import argparse
