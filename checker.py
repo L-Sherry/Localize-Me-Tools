@@ -586,3 +586,77 @@ class Checker(CheckerLexer):
             word.size = self.calc_string_size(word.plain, metrics, warn_func)
         lines = self.wrap_text(words, metrics, boxtype)
         self.check_boxes(lines, boxtype, metrics, warn_func)
+
+
+class PackChecker(Checker):
+    def __init__(self, sparse_reader, check_settings):
+        super().__init__(check_settings)
+        self.sparse_reader = sparse_reader
+
+    def check_pack(self, pack):
+
+        def get_text(file_path, dict_path, warn_func):
+            file_dict_path_str = common.serialize_dict_path(file_path,
+                                                            dict_path)
+
+            orig = self.sparse_reader.get(file_path, dict_path)
+            if orig is None:
+                return None
+            trans = pack.get(file_dict_path_str, orig)
+            if trans is None:
+                warn_func("notice",
+                          "referenced path '%s' not translated yet" % (
+                              file_dict_path_str))
+                return orig
+            return trans['text']
+
+        for file_dict_path_str, trans in pack.get_all().items():
+            comp = self.sparse_reader.get_complete_by_str(file_dict_path_str)
+            orig_langlabel, (file_path, dict_path), reverse_path = comp
+            if isinstance(reverse_path, dict) and "tags" in reverse_path:
+                tags = reverse_path["tags"].split(' ')
+            else:
+                tags = tagger.find_tags(file_path, dict_path, reverse_path)
+
+            if orig_langlabel is None:
+                orig_langlabel = {}
+
+            true_orig = orig_langlabel.get(self.sparse_reader.default_lang)
+            orig = trans.get("orig")
+            text = trans.get("text")
+
+            error = None
+            if true_orig is None:
+                error = "translation is stale: does not exist anymore"
+            elif orig is not None and true_orig != orig:
+                error = "translation is stale: original text differs"
+
+            if error is not None:
+                self.print_error(file_dict_path_str, "warn", error, text)
+                continue
+
+            if not text:
+                if "ciphertext" in trans:
+                    self.print_error(file_dict_path_str, "notice",
+                                     "encrypted entries not supported", "")
+                elif true_orig:
+                    self.print_error(file_dict_path_str, "error",
+                                     "entry has no translation", "")
+                continue
+
+            self.check_text(file_path, dict_path, text, true_orig, tags,
+                            get_text)
+
+
+def check_assets(sparse_reader, check_settings, assets_path, from_locale):
+    """Hack to check original game assets.
+
+    most checks won't detect anything when used that way."""
+    checker = Checker(check_settings)
+    it = common.walk_assets_for_translatables(assets_path, from_locale)
+    for langlabel, (file_path, dict_path), reverse_path in it:
+        orig = langlabel[from_locale]
+        tags = tagger.find_tags(file_path, dict_path, reverse_path)
+        checker.check_text(file_path, dict_path, orig, orig, tags,
+                           lambda f, d, warn_func: sparse_reader.get(f, d))
+    return checker
