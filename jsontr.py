@@ -11,92 +11,30 @@ from readliner import Readliner
 import tags as tagger
 import checker
 
-class PackFile:
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        # dict from serialized file_dict_path to translation object
-        # (e.g. {"orig": orig, "text": new})
-        self.translations = {}
-        # Index from orig to an object in self.translations
-        self.translation_index = {}
-        # Statistics about badnesses
-        self.quality_stats = {"bad": 0, "incomplete": 0,
-                              "unknown": 0, "wrong": 0}
-
-    def load(self, filename, on_each_text_load=lambda x: None):
-        self.reset()
-
-        self.translations = common.load_json(filename)
-        for entry in self.translations.values():
-            self.translation_index[entry['orig']] = entry
-            self.add_quality_stat(entry)
-            on_each_text_load(entry)
-
+class PackFile(common.PackFile):
     def save(self, filename):
         print("Saving", end="...", flush=True)
-        try:
-            os.rename(filename, filename+'~')
-        except IOError:
-            pass
-        common.save_json(filename+".new", self.translations)
-        os.rename(filename+".new", filename)
+        super().save(filename)
         print(" ok.")
 
-    def add_quality_stat(self, entry, shift=1):
-        qual = entry.get("quality")
-        if qual is not None:
-            self.quality_stats[qual] += shift
+    def load(self, filename, on_each_text_load=lambda x: None):
+        super().load(filename, on_each_text_load)
+        print("loaded", filename)
+        print(self.get_stats(config))
 
-    def add_incomplete_translation(self, dict_path_str, orig,
-                                   incomplete_entry):
-        assert 'text' not in incomplete_entry
-        incomplete_entry["orig"] = orig
-        self.translations[dict_path_str] = incomplete_entry
-        self.add_quality_stat(incomplete_entry)
-
-    def add_translation(self, dict_path_str, orig, new_entry):
-        new_entry["orig"] = orig
-        if dict_path_str in self.translations:
-            self.add_quality_stat(self.translations[dict_path_str], -1)
-        self.translations[dict_path_str] = new_entry
-        self.add_quality_stat(new_entry)
-        # this may erase duplicates, but may be more fitting to the context
-        self.translation_index[orig] = new_entry
-
-    def get_by_orig(self, orig):
-        return self.translation_index.get(orig)
-
-    def get(self, file_dict_path_str, orig_text=None):
-        ret = self.translations.get(file_dict_path_str)
-        if ret is None:
-            return None
-        if orig_text is not None and ret['orig'] != orig_text:
-            return None
-        return ret
-
-    get_all = lambda self: self.translations
-
-    def get_stats(self, config):
-        strings = len(self.translations)
-        uniques = len(self.translation_index)
-        def format_stat(count, out_of, label):
-            if isinstance(out_of, int) and out_of > 1:
-                return "%6i / %6i, %s (%.3f%%)"%(count, out_of, label,
-                                                 100. * count / out_of)
-            return "%6i %s"%(count, label)
-
-        ret = format_stat(strings, config.total_count, "translations") + '\n'
-        desc = {"unknown": "strings of unchecked quality",
-                "bad": "badly formulated/translated strings",
-                "incomplete": "strings with translated parts missing",
-                "wrong": "translations that changes the meaning significantly"}
-        for qual, count in self.quality_stats.items():
-            ret += "%6i %s(%s)\n"%(count, desc[qual], qual)
-        ret += format_stat(uniques, config.unique_count, "uniques")
-        return ret
-
+    def save_modify_load(self, filename, modify_function):
+        self.save(filename)
+        while True:
+            modify_function(filename)
+            try:
+                super().load(filename)
+                return
+            except Exception as exc:
+                print(exc)
+                line = input("Press enter to reedit, or :q! to quit")
+                if line.strip() == ':q!':
+                    sys.exit(1)
+                continue
 
 class CircularBuffer:
     def __init__(self, size):
@@ -619,23 +557,14 @@ class Translator:
                 return ret
 
     def command_spawn_editor(self, ignored):
-        if not self.config.editor:
+        editor = self.config.editor
+        if not editor:
             print("No editor configured")
             return
-        self.pack.save(self.config.packfile)
-        while True:
-            os.system("%s %s" % (self.config.editor, self.config.packfile))
-            try:
-                # not touching the history here, this is intentionnal, it gets
-                # confusing otherwise.
-                self.pack.load(self.config.packfile)
-                return
-            except Exception as exc:
-                print(exc)
-                line = input("Press enter to reedit, or :q! to quit")
-                if line.strip() == ':q!':
-                    sys.exit(1)
-                continue
+        # not touching the history here, this is intentionnal, it gets
+        # confusing otherwise.
+        self.pack.save_modify_load(self.config.packfile,
+                lambda filename : os.system("%s %s" % (editor, filename)))
 
     def command_save(self, ignored):
         self.pack.save(self.config.packfile)
@@ -1087,8 +1016,6 @@ if __name__ == '__main__':
         for entry in history:
             readliner.add_history(CommandParser.make_line_input(entry))
         del history
-        print("loaded", config.packfile)
-        print(pack.get_stats(config))
     if extra["do_count"]:
         count_or_debug(config, extra, pack)
     if extra["do_check"]:
