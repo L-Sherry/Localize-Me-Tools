@@ -29,7 +29,8 @@ def find_tags(file_path, dict_path, previous):
         tags.append("langfile")
         if file_path[-1].startswith("gui"):
             if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
-                tags.append("equip-description")
+                if dict_path[-1] != "levels":
+                    tags.append("equip-description")
             if dict_path[1:4] == ['menu', 'new-game', 'options']:
                 tags.append("newgame-%s"%dict_path[4])
 
