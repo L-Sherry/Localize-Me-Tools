@@ -156,6 +156,7 @@ class Configuration:
         "compose_chars": [],
         "filter_file_path": [],
         "filter_dict_path": [],
+        "filter_quality": [],
         "filter_tags": [],
         "ignore_known": True,
         "ignore_unknown": False,
@@ -215,6 +216,11 @@ class Configuration:
                             containing both a and c or any index containing "d",
                             so the result here will be ["c", "a"],
                             ["d", "a", "0"] and ["d", "a", "1"].""")
+        parser.add_argument("--filter-quality", nargs="+",
+                            dest="filter_quality", type=listoflist,
+                            metavar="<qualities>",
+                            help="""Filter current translations qualities.
+                            This only make sense if ignore-known is false.""")
         parser.add_argument("--filter-tags", nargs="+", dest="filter_tags",
                             type=listoflist, metavar="<tag1 tag2...>",
                             help="""filter the translations to display given
@@ -273,7 +279,8 @@ class Configuration:
         # filter_file_path -> filter_file_path_func
         # filter_dict_path -> filter_dict_path_func
         # filter_tags -> filter_tags_func
-        for filtertype in ("file_path", "dict_path", "tags"):
+        # filter_quality -> filter_quality_func
+        for filtertype in ("file_path", "dict_path", "tags", "quality"):
             components = getattr(self, "filter_%s"%filtertype)
             filter_ = self.get_filter_from_components(components)
             setattr(self, "filter_%s_func"%filtertype, filter_)
@@ -392,7 +399,9 @@ class Configuration:
             if known and lang_label[self.from_locale] == known.get('orig'):
                 if self.ignore_known:
                     return None
-                return known
+                if self.filter_quality_func([known.get('quality', '')]):
+                    return known
+                return None
 
             # if we are here, there is stale stuff.
             return known
