@@ -1,4 +1,54 @@
 
+def find_tags_database(dict_path, previous):
+    tags = ["data-%s"%dict_path[0]]
+    if dict_path[0] == "lore":
+        tags.append("lore-%s" % previous[2]["category"].lower())
+        tags.append("lore-%s"%dict_path[-1])
+    elif dict_path[0] == "quests":
+        tags.append("quests-%s"%dict_path[-1])
+        tags.append("quests-%s"%previous[2].get("area"))
+    else:
+        tags.append("%s-%s"%(dict_path[0], dict_path[-1]))
+    return tags
+
+def find_tags_langfile(file_path, dict_path):
+    tags = ["langfile"]
+    if not file_path[-1].startswith("gui"):
+        return tags
+    if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
+        if dict_path[-1] != "levels":
+            tags.append("equip-description")
+    if dict_path[1:4] == ['menu', 'new-game', 'options']:
+        tags.append("newgame-%s"%dict_path[4])
+    return tags
+
+def try_find_tags_xeno_text(dict_path, previous):
+    if dict_path[0] != "entities":
+        return None
+    if len(dict_path) != 6:
+        return None
+    if not isinstance(previous[2], dict):
+        return None
+    if previous[2].get("type") != "XenoDialog":
+        return None
+    tags = ["xeno"]
+
+    name = previous[-1].get("entity", {}).get("name")
+    # now find the npc
+    for entity in previous[1]:
+        if entity.get("type") != "NPC":
+            continue
+        settings = entity.get("settings", {})
+        if settings.get("name") != name:
+            continue
+
+        # found it
+        character = settings.get("characterName")
+        if character:
+            tags.append(character)
+        break
+    return tags
+
 def find_tags(file_path, dict_path, previous):
     """Find tags to apply to a string given the context of where it was found
 
@@ -10,42 +60,36 @@ def find_tags(file_path, dict_path, previous):
         first_component = first_component[:-5]
 
     if first_component == "database":
-        tags.append("data-%s"%dict_path[0])
-        if dict_path[0] == "lore":
-            tags.append("lore-%s" % previous[2]["category"].lower())
-            tags.append("lore-%s"%dict_path[-1])
-            return tags
-        if dict_path[0] == "quests":
-            tags.append("quests-%s"%dict_path[-1])
-            tags.append("quests-%s"%previous[2].get("area"))
-        elif dict_path[0] != "commonEvents":
-            tags.append("%s-%s"%(dict_path[0], dict_path[-1]))
-            return tags
-
+        if dict_path[0] != "commonEvents":
+            return find_tags_database(dict_path, previous)
+        else:
+            tags.append("common-events")
     elif first_component == "item-database":
-        tags.append("item")
-        tags.append("item-%s"%dict_path[-1])
+        return ["item", "item-%s"%dict_path[-1]]
     elif first_component == "lang" and dict_path[0] == 'labels':
-        tags.append("langfile")
-        if file_path[-1].startswith("gui"):
-            if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
-                if dict_path[-1] != "levels":
-                    tags.append("equip-description")
-            if dict_path[1:4] == ['menu', 'new-game', 'options']:
-                tags.append("newgame-%s"%dict_path[4])
+        return find_tags_langfile(file_path, dict_path)
 
     elif first_component == "players" and file_path[1] == "lea.json":
-        tags.append("players-lea-%s"%dict_path[-1])
+        return ["players-lea-%s"%dict_path[-1]]
     else:
         tags.append("%s-%s"%(first_component, dict_path[-1]))
 
+    if file_path[0] == "maps":
+        xenotags = try_find_tags_xeno_text(dict_path, previous)
+        if xenotags:
+            return tags + xenotags
+
+    # attempts to find all SHOW_MSG and the likes
     if previous and isinstance(previous[-1], dict):
+
         if previous[-1].get("msgType"):
+            # picks up many non-dialogs texts, like new words, tutorials
             type_ = previous[-1].get("msgType").lower()
             tags.append(type_)
             tags.append("%s-%s"%(type_, dict_path[-1]))
 
         elif previous[-1].get("type"):
+            # will pick up pretty much everything else most of the time
             text_type = previous[-1].get("type").lower()
             if text_type.startswith("show_"):
                 text_type = text_type[5:]
