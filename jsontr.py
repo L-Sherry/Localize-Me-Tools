@@ -457,8 +457,13 @@ class Translator:
             entire_completion = ""
         self.readliner.set_entire_completion_string(entire_completion)
 
-    def setup_prefilled_text(self, stale, duplicate):
-        if duplicate:
+    def setup_prefilled_text(self, real_known, stale, duplicate):
+        if real_known and '\n' in real_known.get("note",""):
+            real_known =real_known.copy()
+            del real_known['note']
+        if real_known:
+            prefill = CommandParser.make_line_input(real_known)
+        elif duplicate:
             prefill = CommandParser.make_line_input(duplicate)
         elif stale and 'text' in stale:
             prefill = CommandParser.make_line_input(stale)
@@ -468,23 +473,24 @@ class Translator:
         self.readliner.prefill_text(prefill)
 
     @staticmethod
-    def format_trans_to_show(filtered_lang_label, tags=None, known=None,
-                             orig=None, file_dict_path_str=None):
+    def format_trans_to_show(filtered_lang_label, tags=None, real_known=None,
+                             stale=None, orig=None, file_dict_path_str=None):
         string = ""
         if file_dict_path_str is not None:
             string += '%s\n' % (file_dict_path_str)
         if tags is not None:
             string += "%s\n" % (" ".join(tags))
-        if known and orig is not None:
-            if known['orig'] != orig and "text" in known:
-                string += "stale translation:\n"
-                string += "our orig :%s\n" % (known['orig'])
-                string += "our trans:%s\n" % (known['text'])
+        if stale is not None:
+            string += "stale translation:\n"
+            string += "our orig :%s\n" % (stale['orig'])
+            string += "our trans:%s\n" % (stale['text'])
         for locale, orig in filtered_lang_label.items():
             if orig is None:
                 string += 'NO %s\n' % locale
             else:
                 string += '%s: %s\n' % (locale[:2], orig)
+        if real_known and real_known.get("note"):
+            string += real_known['note'].rstrip() + '\n'
         return string
 
     def prompt_user(self, to_show, prompt, commands):
@@ -738,10 +744,18 @@ class Translator:
     def ask_for_complete_trans(self, file_dict_path_str,
                                filtered_lang_label, tags, known, duplicate,
                                orig):
-        to_show = self.format_trans_to_show(filtered_lang_label, tags, known,
-                                            orig, file_dict_path_str)
+        real_known = stale = None
+        if known is not None and "text" in known:
+            if "orig" in known and orig != known["orig"]:
+                stale = known
+            else:
+                real_known = known
+
+        to_show = self.format_trans_to_show(filtered_lang_label, tags,
+                                            real_known, stale, orig,
+                                            file_dict_path_str)
         self.setup_autocomplete(filtered_lang_label.values())
-        self.setup_prefilled_text(known, duplicate)
+        self.setup_prefilled_text(real_known, stale, duplicate)
 
         commands = dict(self.common_commands)
         commands['split'] = self.curry_command_split_trans(file_dict_path_str,
