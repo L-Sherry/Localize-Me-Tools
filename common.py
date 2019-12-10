@@ -315,7 +315,7 @@ class PackFile:
         self.translation_index = {}
         # Statistics about badnesses
         self.quality_stats = {"bad": 0, "incomplete": 0,
-                              "unknown": 0, "wrong": 0}
+                              "unknown": 0, "wrong": 0, "spell": 0}
 
     def load(self, filename, on_each_text_load=lambda x: None):
         self.reset()
@@ -383,7 +383,8 @@ class PackFile:
         desc = {"unknown": "strings of unchecked quality",
                 "bad": "badly formulated/translated strings",
                 "incomplete": "strings with translated parts missing",
-                "wrong": "translations that changes the meaning significantly"}
+                "wrong": "translations that changes the meaning significantly",
+                "spell": "translations with spelling errors"}
         for qual, count in self.quality_stats.items():
             ret += "%6i %s(%s)\n" % (count, desc[qual], qual)
         ret += format_stat(uniques, config.unique_count, "uniques")

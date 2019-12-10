@@ -62,6 +62,7 @@ class CommandParser:
         ("/wro", "wrong"),
         ("/miss", "incomplete"),
         ("/unkn", "unknown"),
+        ("/spell", "spell"),
         ("/note", None)
     )
     @classmethod
@@ -656,10 +657,11 @@ class Translator:
     QUALITY_SORT = {
         None: 0,
         'note': 0,
-        'unknown': 1,
-        'bad': 2,
-        'incomplete': 3,
-        'wrong': 4
+        'spell': 1,
+        'unknown': 2,
+        'bad': 3,
+        'incomplete': 4,
+        'wrong': 5
     }
 
     def command_split_trans(self, file_dict_path_str, filtered_lang_label,
