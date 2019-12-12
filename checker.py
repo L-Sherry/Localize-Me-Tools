@@ -183,7 +183,7 @@ class CheckerLexer(CheckerBase):
         (["lore", "title", "#1"], ["database.json"], ['lore', "#1", 'title']),
         (["item", 0, "name"], ["item-database.json"], ["items", 0, "name"]),
         (["area", "#1", "name"], ["database.json"], ['areas', '#1', 'name']),
-        (["area", "#1", "landmarks", "name", "#2"],
+        (["area", "#1", "landmark", "name", "#2"],
          ["database.json"], ['areas', '#1', 'landmarks', '#2', 'name']),
         (["misc", "localNum", 0], lambda param, warn: param[0], None),
         (["combat", "name", "#*"],
