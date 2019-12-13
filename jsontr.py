@@ -745,7 +745,7 @@ class Translator:
                                filtered_lang_label, tags, known, duplicate,
                                orig):
         real_known = stale = None
-        if known is not None and "text" in known:
+        if known and "text" in known:
             if "orig" in known and orig != known["orig"]:
                 stale = known
             else:
