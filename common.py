@@ -107,13 +107,33 @@ def walk_json_for_langlabels(json, lang_to_check):
     filter_func = lambda ll: (ll.__class__ is dict and lang_to_check in ll)
     yield from walk_json_filtered(json, filter_func)
 
-def walk_langfile_json(json, lang):
-    for value, dict_path, reverse_path in walk_json_inner(json):
-        if len(dict_path) == 1:
-            continue
-        elif not isinstance(value, str):
-            continue
-        yield {lang: value}, dict_path, reverse_path
+def walk_langfile_json(json_dict, dict_path, reverse_path):
+    # {a: {x:""}, b: {x:""}, c: {x:""}} -> {x:{a:"", b:"", c:""}}
+    strings = {}
+    dicts = {}
+    for lang, value in list(json_dict.items()):
+        if isinstance(value, str):
+            strings[lang] = value
+        elif isinstance(value, dict):
+            for key, subvalue in value.items():
+                dicts.setdefault(key, {})[lang] = subvalue
+        elif isinstance(value, list):
+            # this convert an array into a dict with integer indices...
+            # should be enough for everybody
+            for i, subvalue in enumerate(value):
+                dicts.setdefault(str(i), {})[lang] = subvalue
+
+    if strings:
+        yield strings, dict_path, reverse_path
+    if not dicts:
+        return
+    dict_path.append(None)
+    reverse_path.append(json_dict)
+    for key, value in dicts.items():
+        dict_path[-1] = key
+        yield from walk_langfile_json(value, dict_path, reverse_path)
+    dict_path.pop()
+    assert reverse_path.pop() is json_dict
 
 def walk_files(base_path, sort=True):
     for dirpath, subdirs, filenames in os.walk(base_path, topdown=True):
@@ -127,19 +147,50 @@ def walk_files(base_path, sort=True):
 
 def walk_assets_for_translatables(base_path, orig_lang,
                                   path_filter=lambda x: True):
+    def add_file_path(file_path, iterable):
+        for value, dict_path, reverse_path in iterable:
+            yield value, (file_path, dict_path), reverse_path
+
+    langfiles = {}
+    langfile_base = None
+    langfile_file_path = None
+    def collect_langfiles(base, lang, file_path, json):
+        nonlocal langfiles
+        nonlocal langfile_base
+        nonlocal langfile_file_path
+
+        if lang == orig_lang:
+            langfile_file_path = file_path
+        if base != langfile_base:
+
+            if langfile_file_path:
+                yield from add_file_path(langfile_file_path,
+                                         walk_langfile_json(langfiles, [], []))
+            langfiles.clear()
+            langfile_base = base
+            langfile_file_path = None
+        if lang:
+            langfiles[lang] = json
+
     for usable_path, rel_path in walk_files(base_path):
         file_path = rel_path.split(os.sep)
         if not path_filter(file_path):
             continue
         json = load_json(usable_path)
         if rel_path.startswith("lang"):
-            if orig_lang not in rel_path:
-                continue
-            iterable = walk_langfile_json(json, orig_lang)
+            sep_ind = rel_path.rfind('.', 0, -5)
+            if sep_ind != -1:
+                yield from collect_langfiles(rel_path[:sep_ind],
+                                             rel_path[sep_ind+1:-5],
+                                             file_path, json)
+            else:
+                print("Found lang file without lang in filename:", rel_path)
         else:
-            iterable = walk_json_for_langlabels(json, orig_lang)
-        for value, dict_path, reverse_path in iterable:
-            yield value, (file_path, dict_path), reverse_path
+            yield from collect_langfiles(None, None, None, None)
+            yield from add_file_path(file_path,
+                                     walk_json_for_langlabels(json, orig_lang))
+
+    yield from collect_langfiles(None, None, None, None)
 
 def get_data_by_dict_path(json, dict_path, include_reverse=False):
     reverse_path = []
