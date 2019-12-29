@@ -116,6 +116,8 @@ BOX_TYPES_BY_TAGS = {
         "quests-location": ('small', 'vbox', 238, 2),
         # approximation for item names (142 comes often, but includes the icon)
         # starts at 116, stops at 122, we really need the space, so ... 122.
+        # also, dialog boxes (quest end, trader preview) have less space...
+        # need to figure it out.
         "item-name": ("normal", "hbox", 122, 1),
         # approximation for item description
         # having buffs can incuur a 90px penalty.
@@ -144,7 +146,8 @@ BOX_TYPES_BY_TAGS = {
         "achievements-description": ('small', 'box', 224, 2),
 
         # quest name size ? 206 to 212
-        "quests-text": ("normal", "hbox", 206, 1),
+        # except sub quests are inddented and have 24px less, or something
+        "quests-name": ("normal", "hbox", 206, 1),
 
         # subtasks in quest menu are 220 max
         "quests-text": ("small", "hbox", 220, 1),
