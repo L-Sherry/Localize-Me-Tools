@@ -164,8 +164,8 @@ def walk_assets_for_translatables(base_path, orig_lang,
         if base != langfile_base:
 
             if langfile_file_path:
-                yield from add_file_path(langfile_file_path,
-                                         walk_langfile_json(langfiles, [], []))
+                iterator = walk_langfile_json(langfiles, ["labels"], [None])
+                yield from add_file_path(langfile_file_path, iterator)
             langfiles.clear()
             langfile_base = base
             langfile_file_path = None
@@ -179,10 +179,10 @@ def walk_assets_for_translatables(base_path, orig_lang,
         json = load_json(usable_path)
         if rel_path.startswith("lang"):
             sep_ind = rel_path.rfind('.', 0, -5)
-            if sep_ind != -1:
+            if sep_ind != -1 and "labels" in json:
                 yield from collect_langfiles(rel_path[:sep_ind],
                                              rel_path[sep_ind+1:-5],
-                                             file_path, json)
+                                             file_path, json["labels"])
             else:
                 print("Found lang file without lang in filename:", rel_path)
         else:
