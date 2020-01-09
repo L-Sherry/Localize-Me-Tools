@@ -18,6 +18,8 @@ def find_tags_langfile(file_path, dict_path):
     if dict_path[1:4] == ['menu', 'equip', 'descriptions']:
         if dict_path[-1] != "levels":
             tags.append("equip-description")
+    if dict_path[1:4] == ['menu', 'equip', 'modifier']:
+        tags.append("modifier-name")
     if dict_path[1:4] == ['menu', 'new-game', 'options']:
         tags.append("newgame-%s"%dict_path[4])
     return tags
@@ -125,6 +127,8 @@ BOX_TYPES_BY_TAGS = {
 
         # status descriptions could be 290 in status menu
         "equip-description": ("small", "vbox", 290, 2),
+        # modifier name are tiny but have a tiny box
+        "modifier-name": ("tiny", "hbox", 59, 1),
 
         # new game options, not verified, but actually shorter than item names
         "newgame-names": ("normal", "hbox", 124, 1),
