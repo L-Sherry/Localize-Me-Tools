@@ -125,6 +125,9 @@ BOX_TYPES_BY_TAGS = {
         # having buffs can incuur a 90px penalty.
         "item-description": ("normal", "hbox", 558, 1),
 
+        # a guess, seeing how it's comparable to item-description
+        "areas-description": ("normal", "hbox", 559, 1),
+
         # status descriptions could be 290 in status menu
         "equip-description": ("small", "vbox", 290, 2),
         # modifier name are tiny but have a tiny box
