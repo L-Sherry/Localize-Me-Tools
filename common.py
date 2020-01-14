@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import os.path
+import tags as tagger
 
 def load_json(path):
     """Load a json file given a path"""
@@ -441,13 +442,129 @@ class PackFile:
         ret += format_stat(uniques, config.unique_count, "uniques")
         return ret
 
+class GameWalker:
+    """Walks the game files using either a directory to read from or a cache.
+
+    Chooses semi-automatically which one to use, and supports filtering for
+    files, dict_paths, tags or even a custom filter.
+    """
+
+    def __init__(self, game_dir=None, string_cache_path=None,
+                 string_cache=None):
+        self.string_cache = string_cache
+        self.data_dir = None
+        self.file_path_filter = self.yes_filter
+        self.dict_path_filter = self.yes_filter
+        self.tags_filter = self.yes_filter
+        self.custom_filter = lambda path, langlabel: True
+        if string_cache is not None:
+            return
+        elif string_cache_path and os.path.exists(self.string_cache_file):
+            try:
+                self.string_cache = common.string_cache()
+                seff.string_cache.load_from_file(string_cache_path)
+                return
+            except:
+                pass
+
+        if game_dir is None:
+            raise ValueError("No source configured or available")
+        try:
+            self.data_dir = os.path.join(get_assets_path(game_dir), "data")
+        except:
+            raise RuntimeError("cannot find any game data source")
+
+    def walk_cache(self, drain=True):
+        if drain:
+            iterator = self.string_cache.iterate_drain()
+        else:
+            iterator = self.string_cache.iterate()
+        for langlabel, (file_path,
+                        dict_path), file_dict_path_str, extra in iterator:
+            if not self.file_path_filter(file_path):
+                continue
+            if not self.dict_path_filter(dict_path):
+                continue
+
+            info = self.custom_filter(file_dict_path_str, langlabel)
+            if info is None:
+                continue
+
+            tags = extra["tags"].split()
+            if not self.tags_filter(tags):
+                continue
+            yield file_dict_path_str, langlabel, tags, info
+
+    def walk_game_files(self, from_locale):
+        iterable = walk_assets_for_translatables(self.data_dir, from_locale,
+                                                 self.file_path_filter)
+        for langlabel, (file_path, dict_path), reverse_path in iterable:
+            if not self.dict_path_filter(dict_path):
+                continue
+
+            file_dict_path_str = serialize_dict_path(file_path, dict_path)
+            info = self.custom_filter(file_dict_path_str, langlabel)
+            if info is None:
+                continue
+
+            tags = tagger.find_tags(file_path, dict_path, reverse_path)
+            if not self.tags_filter(tags):
+                continue
+
+            yield file_dict_path_str, langlabel, tags, info
+
+    def walk(self, from_locale, drain=True):
+        if self.string_cache is not None:
+            return self.walk_cache(drain)
+        else:
+            return self.walk_game_files(from_locale)
+
+    def set_file_path_filter(self, array):
+        self.file_path_filter = self.make_filter(array)
+
+    def set_dict_path_filter(self, array):
+        self.dict_path_filter = self.make_filter(array)
+
+    def set_tags_filter(self, array):
+        self.tags_filter = self.make_filter(array)
+
+    def set_custom_filter(self, custom_filter):
+        """set a custom filter.
+
+        It will take a file_dict_path_str and a langlabel. If it returns None,
+        the entry is filtered, else, the return value of this filter is yielded
+        as the fourth entry of the tuple"""
+        self.custom_filter = custom_filter
+
+    @staticmethod
+    def yes_filter(something):
+        return True
+
+    @classmethod
+    def make_filter(cls, array):
+        if not array:
+            return cls.yes_filter
+        array_of_ands = []
+        for x in array:
+            if isinstance(x, str):
+                array_of_ands.append((x,))
+            elif isinstance(x, list):
+                array_of_ands.append(x)
+            else:
+                raise ValueError("bad value for filter: %s"%repr(x))
+        def check_filter(some_path_as_list):
+            for candidate in array_of_ands:
+                if all(c in some_path_as_list for c in candidate):
+                    return True
+            return False
+        return check_filter
 
 def transform_file_or_dir(input_path, output_path):
     """Browse all files in input_file and transform them into output_path.
 
     e.g. you can reimplement cp -r with:
     for a,b,c in transform_file_or_dir(arg1, arg2):
-        open(a, "w").write(open(b).read())
+        open(b, "w").write(open(a).read())
 
     It supports the following cases:
     input | output | result

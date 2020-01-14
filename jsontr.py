@@ -127,26 +127,6 @@ class Configuration:
     def __init__(self):
         self.reset()
         self.check()
-        self.string_cache = None
-
-    @staticmethod
-    def get_filter_from_components(array):
-        if not array:
-            return lambda x: True
-        array_of_ands = []
-        for x in array:
-            if isinstance(x, str):
-                array_of_ands.append((x,))
-            elif isinstance(x, list):
-                array_of_ands.append(x)
-            else:
-                raise ValueError("bad value for filter: %s"%repr(x))
-        def check_filter(some_path_as_list):
-            for candidate in array_of_ands:
-                if all(c in some_path_as_list for c in candidate):
-                    return True
-            return False
-        return check_filter
 
     default_options = {
         "gamedir": ".",
@@ -276,18 +256,16 @@ class Configuration:
         self.locales_to_show = [self.from_locale]
 
     def check(self):
-        # filter_file_path -> filter_file_path_func
-        # filter_dict_path -> filter_dict_path_func
-        # filter_tags -> filter_tags_func
-        # filter_quality -> filter_quality_func
-        for filtertype in ("file_path", "dict_path", "tags", "quality"):
-            components = getattr(self, "filter_%s"%filtertype)
-            filter_ = self.get_filter_from_components(components)
-            setattr(self, "filter_%s_func"%filtertype, filter_)
         if not self.show_locales:
             self.locales_to_show = [self.from_locale]
         else:
             self.locales_to_show = self.show_locales
+
+        qualities = frozenset(self.filter_quality)
+        if qualities:
+            self.filter_quality_func = lambda quality: quality in qualities
+        else:
+            self.filter_quality_func = lambda quality: True
 
     def load_from_file(self, filename, unknown_option=lambda key, val: False):
         json = common.load_json(filename)
@@ -308,71 +286,30 @@ class Configuration:
             json[key] = getattr(self, key)
         common.save_json(filename, json)
 
-    def has_string_cache(self):
-        if self.string_cache is not None:
-            return True
-        return os.path.exists(self.string_cache_file)
+    def iterate_over_all_game(self):
+        walker = common.GameWalker(game_dir = self.gamedir)
+        return walker.walk(self.from_locale, drain=True)
+
+    def iterate_over_configured_source(self, pack, no_cache = False):
+        string_cache = None
+        if not no_cache and os.path.exists(self.string_cache_file):
+            string_cache = self.load_string_cache()
+        walker = common.GameWalker(game_dir = self.gamedir,
+                                   string_cache = string_cache)
+        walker.set_file_path_filter(self.filter_file_path)
+        walker.set_dict_path_filter(self.filter_dict_path)
+        walker.set_tags_filter(self.filter_tags)
+        walker.set_custom_filter(self.get_trans_known_filter(pack))
+        return walker.walk(self.from_locale, drain=True)
 
     def load_string_cache(self):
-        if self.string_cache is not None:
-            return self.string_cache
-        self.string_cache = common.string_cache(self.from_locale)
+        string_cache = common.string_cache(self.from_locale)
         langs = frozenset(self.locales_to_show + [self.from_locale])
         print("loading string cache %s"%(self.string_cache_file), end="...",
               flush=True)
-        self.string_cache.load_from_file(self.string_cache_file, langs)
+        string_cache.load_from_file(self.string_cache_file, langs)
         print(" ok")
-        return self.string_cache
-
-    def iterate_over_game_files(self, other_filter):
-        """iterate over the game files
-
-        this applies the file_path/dict_path and tags filters as requested.
-
-        other_filter will be called as:
-        other_filter(file_dict_path_str, lang_label)
-        and will skip the translation if the result is None."""
-
-        filter_ = self.filter_file_path_func
-        dirpath = os.path.join(common.get_assets_path(self.gamedir), "data")
-        iterable = common.walk_assets_for_translatables(dirpath,
-                                                        self.from_locale,
-                                                        filter_)
-
-        for lang_label, (file_path, dict_path), reverse_path in iterable:
-            if not self.filter_dict_path_func(dict_path):
-                continue
-            path_str = common.serialize_dict_path(file_path, dict_path)
-
-            info = other_filter(path_str, lang_label)
-            if info is None:
-                continue
-
-            tags = tagger.find_tags(file_path, dict_path, reverse_path)
-            if not self.filter_tags_func(tags):
-                continue
-
-            yield path_str, lang_label, tags, info
-
-    def iterate_over_cache(self, other_filter):
-        # a streaming parser would be ideal here... but this will do.
-        drain = self.load_string_cache().iterate_drain()
-        for langlabel, (file_path, dict_path), file_dict_p_str, extra in drain:
-
-            if not self.filter_file_path_func(file_path):
-                continue
-            if not self.filter_dict_path_func(dict_path):
-                continue
-
-
-            info = other_filter(file_dict_p_str, langlabel)
-            if info is None:
-                continue
-
-            tags = extra["tags"].split()
-            if not self.filter_tags_func(tags):
-                continue
-            yield file_dict_p_str, langlabel, tags, info
+        return string_cache
 
     def get_trans_known_filter(self, packfile):
         """A filter suitable for other_filter that yield known translations
@@ -407,14 +344,8 @@ class Configuration:
             return known
         return other_filter
 
-    def iterate_over_configured_source(self, pack):
-        other_filter = config.get_trans_known_filter(pack)
-        if self.has_string_cache():
-            return self.iterate_over_cache(other_filter)
-        return self.iterate_over_game_files(other_filter)
-
     def get_sparse_reader(self):
-        if self.has_string_cache():
+        if os.path.exists(self.string_cache_file):
             return self.load_string_cache()
         return common.sparse_dict_path_reader(self.gamedir, self.from_locale)
     def prune_langlabel(self, lang_label):
@@ -932,8 +863,7 @@ def save_into_cache(config, pack):
     if not config.string_cache_file:
         print("no string cache file specified")
         sys.exit(1)
-    other_filter = config.get_trans_known_filter(pack)
-    iterator = config.iterate_over_game_files(other_filter)
+    iterator = config.iterate_over_all_game()
 
     cache = common.string_cache()
     for file_dict_path_str, lang_label, tags, _ in iterator:
