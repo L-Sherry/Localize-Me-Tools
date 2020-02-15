@@ -327,8 +327,8 @@ class string_cache:
             yield entry["langlabel"], splitted_path, file_dict_path_str, entry
     def iterate(self):
         for file_dict_path_str, entry in self.data.items():
-            file_path, dict_path = unserialize_dict_path(file_dict_path_str)
-            yield entry["langlabel"], (file_path, dict_path), entry
+            splitted_path = unserialize_dict_path(file_dict_path_str)
+            yield entry["langlabel"], splitted_path, file_dict_path_str, entry
 
     def add(self, dict_file_path_str, lang_label_like, extra=None):
         entry = {"langlabel": lang_label_like}
