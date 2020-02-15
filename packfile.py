@@ -107,12 +107,21 @@ class Encraption:
         return ret
 
 
+def get_sparse_reader(args):
+    # TODO: this duplicates code in jsontr.py, should move this into GameWalker
+    if os.path.exists(args.string_cache):
+        string_cache = common.string_cache(args.from_locale)
+        string_cache.load_from_file(args.string_cache)
+        return string_cache
+    return common.sparse_dict_path_reader(args.gamedir,
+                                          args.from_locale)
+
+
 def do_encrapt(args):
     try:
-        game_reader = common.sparse_dict_path_reader(args.gamedir,
-                                                     args.fromlocale)
+        sparse_reader = get_sparse_reader(args)
     except Exception as e:
-        game_reader = None
+        sparse_reader = None
         print("Cannot find game assets:", str(e),
               " continuing by trusting the packfiles")
 
@@ -124,8 +133,8 @@ def do_encrapt(args):
         for file_dict_path_str, value in json.items():
             orig_in_file = value.get('orig')
             orig_in_game = None
-            if game_reader is not None:
-                orig_in_game = game_reader.get_str(file_dict_path_str)
+            if sparse_reader is not None:
+                orig_in_game = sparse_reader.get_str(file_dict_path_str)
                 if orig_in_file is None:
                     value['orig'] = orig_in_game
                 elif orig_in_game is not None and orig_in_game != orig_in_file:
@@ -145,7 +154,8 @@ def do_encrapt(args):
 
 
 def do_decrapt(args):
-    game_reader = common.sparse_dict_path_reader(args.gamedir, args.fromlocale)
+    sorter = get_sorter(args)
+    sparse_reader = get_sparse_reader(args)
     iterator = common.transform_file_or_dir(args.inputpath, args.outputpath)
     error = False
     for input_file, output_file, _ in iterator:
@@ -157,7 +167,7 @@ def do_decrapt(args):
         result = {}
         for file_dict_path_str, value in json.items():
             # print("filedictpath", repr(file_dict_path_str))
-            orig = game_reader.get_str(file_dict_path_str)
+            orig = sparse_reader.get_str(file_dict_path_str)
             if orig is None:
                 print("Cannot read original translation at",
                       file_dict_path_str)
@@ -272,13 +282,18 @@ def parse_args():
                         directory. Any subdirectory of it is also accepted.
                         Search around the current directory by default.""")
     parser.add_argument('--from-locale', '-l', metavar="locale",
-                        default="en_US", dest="fromlocale",
+                        default="en_US", dest="from_locale",
                         help="""Locale used for origin, defaults to en_US.""")
     parser.add_argument('--map-file', '-m', metavar="file", dest="mapfile",
                         default="map_file.json",
                         help="""Location of the file containing the mapping
                         from original game files to location of pack file
                         with the translated texts""")
+    parser.add_argument('--string-cache', metavar="file", dest="string_cache",
+                        default="string_cache.json",
+                        help="""Location of the string cache, used to speed up
+                        string lookups. If not present, the installed game will
+                        be used instead""")
 
     def add_stuffpath(stuff, parser, **kw):
         kw.setdefault("metavar", "<%s dir or file>" % stuff)
