@@ -160,8 +160,6 @@ def walk_assets_for_translatables(base_path, orig_lang,
         nonlocal langfile_base
         nonlocal langfile_file_path
 
-        if lang == orig_lang:
-            langfile_file_path = file_path
         if base != langfile_base:
 
             if langfile_file_path:
@@ -170,6 +168,8 @@ def walk_assets_for_translatables(base_path, orig_lang,
             langfiles.clear()
             langfile_base = base
             langfile_file_path = None
+        if lang == orig_lang:
+            langfile_file_path = file_path
         if lang:
             langfiles[lang] = json
 
