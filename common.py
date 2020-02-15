@@ -544,6 +544,8 @@ class GameWalker:
     def make_filter(cls, array):
         if not array:
             return cls.yes_filter
+        if callable(array):
+            return array
         array_of_ands = []
         for x in array:
             if isinstance(x, str):

@@ -107,6 +107,77 @@ class Encraption:
         return ret
 
 
+def sort_by_game(game_walker, from_locale, pack):
+    def get_file_path_tuple(file_dict_path_str):
+        return tuple(common.unserialize_dict_path(file_dict_path_str)[0])
+
+    # file_path_tuple => pack for that file path
+    packs_by_file = {}
+    for file_dict_path_str, result in pack.items():
+        file_path_tuple = get_file_path_tuple(file_dict_path_str)
+        pack = packs_by_file.setdefault(file_path_tuple, {})
+        pack[file_dict_path_str] = result
+
+    known_files = frozenset(packs_by_file.keys())
+    game_walker.set_file_path_filter(lambda f_p: tuple(f_p) in known_files)
+
+    current_file = None
+    strings_for_file = None
+
+    output = {}
+
+    def add_stale_for_current_file():
+        if strings_for_file:
+            print("note: sorting", len(strings_for_file),
+                  "stale nonexisting strings for", "/".join(current_file))
+            output.update(common.sort_dict(strings_for_file))
+            strings_for_file.clear()
+
+    iterator = game_walker.walk(from_locale, False)
+
+    for file_dict_path_str, _, _, _ in iterator:
+        file_path = get_file_path_tuple(file_dict_path_str)
+        if current_file != file_path:
+            add_stale_for_current_file()
+            current_file = file_path
+            strings_for_file = packs_by_file.pop(file_path, {})
+
+        result = strings_for_file.pop(file_dict_path_str, None)
+        if result is not None:
+            output[file_dict_path_str] = result
+
+    # sort remains of the last file
+    add_stale_for_current_file()
+
+    # sort the remaining stales file_path, and add them
+    for file_path, pack in common.sort_dict(packs_by_file):
+        print("note: sorting", len(pack), "strings for nonexisting",
+              "/".join(file_path))
+        output.update(common.sort_dict(pack))
+
+    return output
+
+
+def get_walker(args):
+    return common.GameWalker(game_dir=args.gamedir,
+                             string_cache_path=args.string_cache,
+                             from_locale=args.from_locale)
+
+
+def get_sorter(args):
+    if args.sort_order == "none":
+        return lambda pack: pack
+    elif args.sort_order == "alpha":
+        return common.sort_dict
+    elif args.sort_order == "game":
+        walker = get_walker(args)
+        from_locale = args.from_locale
+        return lambda pack: sort_by_game(walker, from_locale, pack)
+    else:
+        raise ValueError("Invalid sort order %s (allowed: none, alpha, game)"
+                         % repr(args.sort_order))
+
+
 def get_sparse_reader(args):
     # TODO: this duplicates code in jsontr.py, should move this into GameWalker
     if os.path.exists(args.string_cache):
@@ -118,6 +189,8 @@ def get_sparse_reader(args):
 
 
 def do_encrapt(args):
+    sorter = get_sorter(args)
+
     try:
         sparse_reader = get_sparse_reader(args)
     except Exception as e:
@@ -147,8 +220,7 @@ def do_encrapt(args):
                     error = True
                     continue
             result[file_dict_path_str] = Encraption.encrapt_trans(value)
-        result = common.sort_dict(result)
-        common.save_json(output_file, result)
+        common.save_json(output_file, sorter(result))
     if error:
         sys.exit(1)
 
@@ -181,7 +253,7 @@ def do_decrapt(args):
                 error = True
                 continue
             result[file_dict_path_str] = decrapted
-        common.save_json(output_file, result)
+        common.save_json(output_file, sorter(result))
     if error:
         sys.exit(1)
 
@@ -200,6 +272,8 @@ def do_make_mapfile(args):
 
 
 def do_split(args):
+    sorter = get_sorter(args)
+
     big_pack = common.load_json(args.bigpack)
     map_file = common.load_json(args.mapfile)
     results = {}
@@ -228,10 +302,13 @@ def do_split(args):
 
         actual_dir = os.path.join(args.outputpath, os.sep.join(to_file[:-1]))
         os.makedirs(actual_dir, exist_ok=True)
+        smaller_pack = sorter(smaller_pack)
         common.save_json(os.path.join(actual_dir, to_file[-1]), smaller_pack)
 
 
 def do_merge(args):
+    sorter = get_sorter(args)
+
     big_result = {}
     error = False
     for usable_path, _ in common.walk_files(args.inputpath):
@@ -245,8 +322,7 @@ def do_merge(args):
         else:
             print("Aborting...")
             sys.exit(1)
-    if args.sort:
-        big_result = common.sort_dict(big_result)
+    big_result = sorter(big_result)
 
     common.save_json(args.bigpack, big_result)
 
@@ -266,6 +342,9 @@ def do_diff_langfile(args):
             continue
         trans['text'] = text
         result[common.serialize_dict_path(file_path, dict_path)] = trans
+    # we are already sorted by game order
+    if args.sort_order == "alpha":
+        result = common.sort_dict(result)
     if args.resultfile == '-':
         common.save_json_to_fd(sys.stdout, result)
     else:
@@ -294,6 +373,14 @@ def parse_args():
                         help="""Location of the string cache, used to speed up
                         string lookups. If not present, the installed game will
                         be used instead""")
+    parser.add_argument('--sort-output', metavar="order", dest="sort_order",
+                        default="none",
+                        help="""For commands that write packs, indicate how
+                        the pack should be sorted. "none" means to preserve the
+                        original order, "alpha" mean to sort the file_dict_path
+                        by alphanumerical sort (by unicode code point),
+                        "game" mean to sort by the order in which they appear
+                        in the game file(s) (slow).""")
 
     def add_stuffpath(stuff, parser, **kw):
         kw.setdefault("metavar", "<%s dir or file>" % stuff)
@@ -367,9 +454,6 @@ def parse_args():
     add_inputpath(merge, metavar="<input dir>",
                   help="""Where to search for packfiles""")
     add_bigpack(merge, """Where to write the big packfile""")
-    merge.add_argument("--sort", dest="sort", action="store_true",
-                       help="""Sort the entries by ascending path when writing
-                               the output file""")
     merge.add_argument("--allow-mismatch", dest="allow_mismatch",
                        action="store_true", help="""If two input pack files
                        possess different translation for the same string, then
