@@ -450,22 +450,22 @@ class GameWalker:
     """
 
     def __init__(self, game_dir=None, string_cache_path=None,
-                 string_cache=None):
-        self.string_cache = string_cache
+                 loaded_string_cache=None, from_locale="en_US"):
+        self.string_cache = loaded_string_cache
         self.data_dir = None
         self.file_path_filter = self.yes_filter
         self.dict_path_filter = self.yes_filter
         self.tags_filter = self.yes_filter
         self.custom_filter = lambda path, langlabel: True
-        if string_cache is not None:
+        if loaded_string_cache is not None:
             return
-        elif string_cache_path and os.path.exists(self.string_cache_file):
+        elif string_cache_path and os.path.exists(string_cache_path):
             try:
-                self.string_cache = common.string_cache()
-                seff.string_cache.load_from_file(string_cache_path)
+                self.string_cache = string_cache(from_locale)
+                self.string_cache.load_from_file(string_cache_path)
                 return
             except:
-                pass
+                raise
 
         if game_dir is None:
             raise ValueError("No source configured or available")

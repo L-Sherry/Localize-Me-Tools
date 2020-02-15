@@ -295,7 +295,7 @@ class Configuration:
         if not no_cache and os.path.exists(self.string_cache_file):
             string_cache = self.load_string_cache()
         walker = common.GameWalker(game_dir = self.gamedir,
-                                   string_cache = string_cache)
+                                   loaded_string_cache = string_cache)
         walker.set_file_path_filter(self.filter_file_path)
         walker.set_dict_path_filter(self.filter_dict_path)
         walker.set_tags_filter(self.filter_tags)
