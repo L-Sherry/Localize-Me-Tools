@@ -9,7 +9,7 @@ import sys
 try:
     # The only thing not part of python
     import Crypto.Cipher.AES
-except:
+except Exception:
     print("pycrypto not found. crypto operations will fail !")
 
 import common
@@ -261,13 +261,15 @@ def do_diff_langfile(args):
     else:
         common.save_json(args.resultfile, result)
 
+
 def parse_args():
     import argparse
-    parser = argparse.ArgumentParser(description="Command to manage pack files\n")
+    parser = argparse.ArgumentParser(description="Command to manage pack"
+                                                 " files\n")
     parser.add_argument('--game-dir', '-g', metavar="directory",
                         default='.', dest="gamedir",
                         help="""Location of the installed game's assets/
-                        directory. Any subdirectory of it is also accepted.  
+                        directory. Any subdirectory of it is also accepted.
                         Search around the current directory by default.""")
     parser.add_argument('--from-locale', '-l', metavar="locale",
                         default="en_US", dest="fromlocale",
@@ -278,17 +280,18 @@ def parse_args():
                         from original game files to location of pack file
                         with the translated texts""")
 
-
     def add_stuffpath(stuff, parser, **kw):
-        kw.setdefault("metavar", "<%s dir or file>"%stuff)
-        parser.add_argument("%spath"%stuff, **kw)
+        kw.setdefault("metavar", "<%s dir or file>" % stuff)
+        parser.add_argument("%spath" % stuff, **kw)
 
-    add_inputpath = lambda x, **kw: add_stuffpath("input", x, **kw)
-    add_outputpath = lambda x, **kw: add_stuffpath("output", x, **kw)
-    add_bigpack = lambda x, halp: x.add_argument("bigpack",
-                                                 metavar="<big pack>",
-                                                 help=halp)
+    def add_inputpath(parser, **kw):
+        add_stuffpath("input", parser, **kw)
 
+    def add_outputpath(parser, **kw):
+        add_stuffpath("output", parser, **kw)
+
+    def add_bigpack(parser, halp):
+        parser.add_argument("bigpack", metavar="<big pack>", help=halp)
 
     subparsers = parser.add_subparsers(metavar="COMMAND", required=True)
     encrapt = subparsers.add_parser(
@@ -300,7 +303,6 @@ def parse_args():
                                    containing pack files""")
     add_outputpath(encrapt, help="""where to write encrapted pack file(s)""")
     encrapt.set_defaults(func=do_encrapt)
-
 
     decrapt = subparsers.add_parser(
         'decrapt', help="decrypt one or multiple packfiles",
