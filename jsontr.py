@@ -912,12 +912,13 @@ if __name__ == '__main__':
     if extra["do_count"]:
         count_or_debug(config, extra, pack)
     if extra["do_check"]:
+        check_options = extra.get("check", {})
         if extra["check-asset-path"]:
-            checker = check_assets(config.get_sparse_reader(), extra["check"],
+            checker = check_assets(config.get_sparse_reader(), check_options,
                                    extra["check-asset-path"],
                                    config.from_locale)
         else:
-            checker = PackChecker(config.get_sparse_reader(), extra["check"])
+            checker = PackChecker(config.get_sparse_reader(), check_options)
             checker.check_pack(pack)
         sys.exit(1 if checker.errors else 0)
     if extra["do_cache"]:
