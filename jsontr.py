@@ -846,7 +846,9 @@ def count_or_debug(config, extra, pack):
     count = 0
     iterator = config.iterate_over_configured_source(pack)
     for file_dict_path_str, lang_label, tags, _ in iterator:
-        orig = lang_label[config.from_locale]
+        orig = lang_label.get(config.from_locale)
+        if orig is None:
+            continue
         uniques[orig] = uniques.get(orig, 0) + 1
         count += 1
         if extra["debug"]:
