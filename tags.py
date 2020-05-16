@@ -168,7 +168,10 @@ BOX_TYPES_BY_TAGS = {
         # limit.
 
         # side msgs are 202 confirmed, max 5 lines, and that's a lot already
-        "side": ("normal", "vbox", 202, 5)
+        "side": ("normal", "vbox", 202, 5),
+
+        # permatasks have limit in records menu
+        "set_perma_task": ("normal", "vbox", 374, 2)
 }
 def get_box_by_tags(tags):
     for tag in tags:
