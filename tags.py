@@ -127,6 +127,8 @@ BOX_TYPES_BY_TAGS = {
 
         # a guess, seeing how it's comparable to item-description
         "areas-description": ("normal", "hbox", 559, 1),
+        # another guess
+        "arena-info": ("normal", "hbox", 558, 1),
 
         # status descriptions could be 290 in status menu
         "equip-description": ("small", "vbox", 290, 2),
