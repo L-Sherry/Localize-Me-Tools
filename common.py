@@ -54,61 +54,145 @@ def drain_dict(input_dict):
     while array:
         yield array.pop()
 
-def walk_json_inner(json, dict_path=None, reverse_path=None):
+def walk_json_inner(json_obj, dict_path=None, reverse_path=None):
+    """Walk into a JSON object and yield every sub-object encountered
+
+    Yields (subobject, dict_path, reverse_path), where:
+    'subobject' is a sub object
+    'dict_path' is an list of indices, of type str or int, such as indexing
+    json_obj recursively with them yields 'subobject'.  If e.g. 'dict_path'
+    is ["one", 2, "three"], then 'subobject is json_obj["one"][2]["three"]' is
+    True.
+    'reverse_path' is a list with the same size as 'dict_path', which contains
+    all parent objects. reverse_path[0] is always json_obj, and reverse_path[i]
+    is reverse_path[i-1][dict_path[i-1]]. Note that 'subobject' is not present
+    in 'reverse_path'.
+
+    If a 'subobject' must not be iterated through, then the caller must call
+    iterator.send(False).  send() will return None and this function will not
+    recurse through 'subobject'.
+    """
     if dict_path is None:
         dict_path = []
     if reverse_path is None:
         reverse_path = []
-    if (yield json, dict_path, reverse_path) is False:
+    if (yield json_obj, dict_path, reverse_path) is False:
         # This simplifies the callers, allowing them to not handle
         # the return value of send()
         yield None
         return
-    if isinstance(json, dict):
-        iterable = json.items() # not sorted
-    elif isinstance(json, list):
-        iterable = ((str(i), value) for i, value in enumerate(json))
+    if isinstance(json_obj, dict):
+        iterable = json_obj.items() # not sorted
+    elif isinstance(json_obj, list):
+        iterable = ((str(i), value) for i, value in enumerate(json_obj))
     else:
         return
-    reverse_path.append(json)
+    reverse_path.append(json_obj)
     for key, value in iterable:
         dict_path.append(key)
         yield from walk_json_inner(value, dict_path, reverse_path)
         popped_key = dict_path.pop()
         assert popped_key is key
-    popped_json = reverse_path.pop()
-    assert popped_json is json
+    popped_json_obj = reverse_path.pop()
+    assert popped_json_obj is json_obj
 
-def walk_json_filtered_inner(json, filterfunc):
-    if filterfunc(json):
-        yield json, [], []
+def walk_json_filtered_inner(json_obj, filterfunc):
+    """Internal function to walk and yields JSON sub-objects matching a filter
+
+    Yields the same fields as walk_json_inner(), but 'dict_path' and
+    'reverse_path' are reversed.  Use walk_json_filtered() for a non-internal
+    interface.
+    """
+    if filterfunc(json_obj):
+        yield json_obj, [], []
         return
-    if isinstance(json, dict):
-        iterable = json.items()
-    elif isinstance(json, list):
-        iterable = enumerate(json)
+    if isinstance(json_obj, dict):
+        iterable = json_obj.items()
+    elif isinstance(json_obj, list):
+        iterable = enumerate(json_obj)
     else:
         return
     for key, value in iterable:
         inneriter = walk_json_filtered_inner(value, filterfunc)
         for to_yield, rev_dict_path, rev_reverse_path in inneriter:
             rev_dict_path.append(str(key))
-            rev_reverse_path.append(json)
+            rev_reverse_path.append(json_obj)
             yield to_yield, rev_dict_path, rev_reverse_path
 
 
-def walk_json_filtered(json, filterfunc):
-    iterator = walk_json_filtered_inner(json, filterfunc)
-    for json, rev_dict_path, rev_reverse_path in iterator:
+def walk_json_filtered(json_obj, filterfunc):
+    """Walk into a JSON object and yield sub-objects matching a filter
+
+    Yields the same fields as walk_json_filtered(), but only if
+    filterfunc(subobject) is trueish.  Note that subobject will not be recursed
+    into if filterfunc(subobject) is true.
+    """
+    iterator = walk_json_filtered_inner(json_obj, filterfunc)
+    for json_obj, rev_dict_path, rev_reverse_path in iterator:
         rev_dict_path.reverse()
         rev_reverse_path.reverse()
-        yield json, rev_dict_path, rev_reverse_path
+        yield json_obj, rev_dict_path, rev_reverse_path
 
 def walk_json_for_langlabels(json, lang_to_check):
+    """Walk into a JSON object and yield lang labels.
+
+    A object is considered to be a lang label if it contains the lang
+    'lang_to_check'.  If lang_to_check is 'en_US', then any object with a
+    'en_US' key is considered to be a lang label.
+
+    Yields the following fields (which are the same fields as walk_json_inner):
+    (lang_label, dict_path, reverse_path)
+    where
+    'lang_label' is an object having a lang_to_check key
+    'dict_path' is an list of indices, of type str or int, such as indexing
+    json_obj recursively with them yields 'subobject'.  If e.g. 'dict_path'
+    is ["one", 2, "three"], then 'subobject is json_obj["one"][2]["three"]' is
+    True.
+    'reverse_path' is a list with the same size as 'dict_path', which contains
+    all parent objects. reverse_path[0] is always json_obj, and reverse_path[i]
+    is reverse_path[i-1][dict_path[i-1]]. Note that 'lang_label' is not present
+    in 'reverse_path'.
+    """
     filter_func = lambda ll: (ll.__class__ is dict and lang_to_check in ll)
     yield from walk_json_filtered(json, filter_func)
 
 def walk_langfile_json(json_dict, dict_path, reverse_path):
+    """Walk and merge multiple lang files and yield lang labels out of them.
+
+    'json_dict' must be a dictionary of the form:
+    {
+      "lang1": content_of_langfile1,
+      "lang2": content_of_langfile2,
+      "lang3": content_of_langfile3
+      [...]
+    }
+
+    dict_path and reverse_path should be [], or at least have the same size,
+    in which case, they will be used as a prefix, but note that they are
+    modified in place.
+
+    Yields the following fields (compatible with walk_json_for_langlabels()):
+    (fake_lang_label, dict_path, reverse_path)
+    where 'fake_lang_label' will contain all key of 'json_dict' where there is
+    a string value at 'dict_path'.
+
+    'dict_path' is an list of indices, of type str or int, such as indexing
+    json_dict[language] recursively with them yields 'subobject'.  If e.g.
+    'dict_path' is ["one", 2, "three"], then 
+    'fake_lang_label[language] == json_dict[language]["one"][2]["three"]'.
+    'reverse_path' is a list with the same size as 'dict_path', which contains
+    fake parent objects. reverse_path[0] is always json_dict, and
+    reverse_path[i] is a single object having the same format as 'json_dict',
+    but for subobjects.  It can be defined as:
+
+    reverse_path[i] = {
+        lang1: reverse_path[i-1][lang1][dict_path[i-1]]
+        lang2: reverse_path[i-1][lang2][dict_path[i-1]]
+        lang3: reverse_path[i-1][lang3][dict_path[i-1]]
+        [...]
+    }
+    Note that 'lang_label' is not present in 'reverse_path'.
+    """
     # {a: {x:""}, b: {x:""}, c: {x:""}} -> {x:{a:"", b:"", c:""}}
     strings = {}
     dicts = {}
@@ -119,7 +203,7 @@ def walk_langfile_json(json_dict, dict_path, reverse_path):
             for key, subvalue in value.items():
                 dicts.setdefault(key, {})[lang] = subvalue
         elif isinstance(value, list):
-            # this convert an array into a dict with integer indices...
+            # this convert an list into a dict with integer indices...
             # should be enough for everybody
             for i, subvalue in enumerate(value):
                 dicts.setdefault(str(i), {})[lang] = subvalue
@@ -137,8 +221,19 @@ def walk_langfile_json(json_dict, dict_path, reverse_path):
     assert reverse_path.pop() is json_dict
 
 def walk_files(base_path, sort=True):
+    """Walk files in a directory for files with a .json extension.
+
+    yield (usable_path, rel_path)
+    where 'usable_path' is something that can be passed to open() (i.e. it
+    is prepended by base_path), while 'rel_path' is a path relative to
+    base_path pointing to the file.
+
+    If sort is True, then iterate files and directory sorted in lexical order,
+    for maximum reproducibility.
+    """
     for dirpath, subdirs, filenames in os.walk(base_path, topdown=True):
-        subdirs.sort()
+        if sort:
+            subdirs.sort()
         for name in sorted(filenames) if sort else filenames:
             if not name.endswith('.json'):
                 continue
@@ -148,6 +243,28 @@ def walk_files(base_path, sort=True):
 
 def walk_assets_for_translatables(base_path, orig_lang,
                                   path_filter=lambda x: True):
+    """Walk the game's assets and yield every lang label or fake lang-labels
+
+    'base_path' is assumed to be a path to an 'assets/data/' directory.
+    'orig_lang' is used to find lang labels, and must be a locale name supported
+    by the game (e.g. 'en_US').
+    If 'path_filter' is given, then only browse files where
+    path_filter(file_path) is trueish. file_path is a splitted
+    relative path, e.g. ['characters', 'main', 'lea.json']
+    for assets/data/characters/main/lea.json.
+
+    Yields the following format:
+    (lang_label, (file_path, dict_path), reverse_path)
+    'lang_label' is either a lang label read from a json file or one generated
+    from multiple lang files.
+    'file_path' is a path relative to 'base_path', splitted by the directory
+    separator.  If the lang label was generated from multiple lang files, then
+    'file_path' will reference the one for the 'orig_lang' language.
+    'dict_path' is a list of indices of type str or int, which refers to the
+    position of the lang label inside the file (see walk_json_inner for details)
+    'reverse_path' are the parents objects of the lang label, ordered by
+    descending hierarchy (see walk_json_inner for details)
+    """
     def add_file_path(file_path, iterable):
         for value, dict_path, reverse_path in iterable:
             yield value, (file_path, dict_path), reverse_path
@@ -193,26 +310,51 @@ def walk_assets_for_translatables(base_path, orig_lang,
 
     yield from collect_langfiles(None, None, None, None)
 
-def get_data_by_dict_path(json, dict_path, include_reverse=False):
+def get_data_by_dict_path(json_obj, dict_path, include_reverse=False):
+    """Traverse a json object by recursively indexing it along a path.
+
+    'json_obj' must be a json object, i.e. a list or dict of list or dicts.
+    'dict_path' is a list of str or int, which will be used as indexes.
+
+    If 'include_reverse' is False, then return a subobject, or None if one of
+    the index does not exist.
+    If 'include_reverse' is True, then return subobject, reverse_path, where
+    reverse_path are the subobject encountered during each index. reverse_path
+    has the same length as dict_path and reverse_path[0] is json_obj.
+
+    Note that this tolerate string index for arrays if the string is a decimal
+    representation of an integer.
+
+    >>> get_data_by_dict_path({"a": ["b", {"c": 5}]}, ["a", 1, "c"])
+    5
+    >>> get_data_by_dict_path({"a": ["b", {"c": 5}]}, ["a", "0"])
+    'b'
+    >>> get_data_by_dict_path({"a": ["b", {"c": 5}]}, ["a", "0"], True)
+    'b', [{"a": ["b", {"c": 5}]}, ["b", {"c": 5}]]
+    """
     reverse_path = []
     for component in dict_path:
         if include_reverse:
-            reverse_path.append(json)
-        if isinstance(json, list):
+            reverse_path.append(json_obj)
+        if isinstance(json_obj, list):
             try:
-                json = json[int(component)]
+                json_obj = json_obj[int(component)]
             except:
                 return None
         else:
-            json = json.get(component)
-            if json is None:
+            json_obj = json_obj.get(component)
+            if json_obj is None:
                 return None
     if include_reverse:
-        return json, reverse_path
-    return json
+        return json_obj, reverse_path
+    return json_obj
 
 
 def serialize_dict_path(file_path, dict_path):
+    """Return a string that represents both file_path and dict_path
+
+    file_path and dict_path are assumed to be list of path components.
+    """
     # FIXME: we need a better encoding maybe. Look for RFC 6901
     # eg: escape / in keys with \, escape \ with \ as well, and find
     # a way to handle json files not having a .json extension.
