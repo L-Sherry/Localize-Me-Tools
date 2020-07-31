@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import os
 import sys
+import heapq
 
 try:
     # The only thing not part of python
@@ -350,6 +351,259 @@ def do_diff_langfile(args):
     else:
         common.save_json(args.resultfile, result)
 
+class MigrationCalculator:
+    """Matches a source string cache to a destination string and migrate packs
+
+    Uses a nondeterministic polynomial complete algorithm"""
+    def __init__(self, source_string_cache, destination_string_cache):
+        self.src = source_string_cache
+        self.dest = destination_string_cache
+        self.map = {}
+
+    # the code below assumes same file matches trump all other matches
+    SAME_FILE = 1000
+    SAME_DICT_PATH = 100
+    SAME_FIELD = 100
+    # Arbitrary score when everything matches.
+    MAX_SCORE = 10000
+    # Arbitrary score when a langfile was moved as-is in the same file.
+    SAME_FILE_MAX_SCORE = 5000
+
+    @classmethod
+    def match_score(cls, src_file_dict_path, dest_file_dict_path,
+                    src_langlabel, dest_langlabel):
+        """If it returns 0, then match should be forbidden"""
+        base_score = 0
+        if src_file_dict_path == dest_file_dict_path:
+            base_score = cls.SAME_FILE + cls.SAME_DICT_PATH
+        else:
+            src_file, src_path = common.split_file_dict_path(src_file_dict_path)
+            dest_file_path = common.split_file_dict_path(dest_file_dict_path)
+            dest_file, dest_path = dest_file_path
+            if src_file == dest_file:
+                base_score = cls.SAME_FILE
+            elif src_path == dest_path:
+                base_score += cls.SAME_DICT_PATH
+
+        field_perfect = True
+        field_score = 0
+        for key, value in src_langlabel.items():
+            if value == "" or value == key:
+                continue
+            if dest_langlabel.get(key) == value:
+                field_score += cls.SAME_FIELD
+            else:
+                field_perfect = False
+
+        if base_score == cls.SAME_FILE + cls.SAME_DICT_PATH and field_perfect:
+            return cls.MAX_SCORE
+        if base_score == cls.SAME_FILE and field_perfect:
+            return cls.SAME_FILE_MAX_SCORE
+        return base_score + field_score
+
+    def assign(self, src_file_dict_path, dest_file_dict_path):
+        """Assign the given source to the given dest and drain them
+
+        Draining is used to reduce the pressure on the following algorithms"""
+        self.map[src_file_dict_path] = dest_file_dict_path
+        self.src.delete(src_file_dict_path)
+        self.dest.delete(dest_file_dict_path)
+
+    def do_greddy_map(self):
+        """Drain both string caches with perfect matches
+
+        Return number of drained elements"""
+        perfect_matches = []
+        # still can't drain while iterating ?
+        for src_langlabel, _, src_file_dict_path, _ in self.src.iterate():
+            dest_ll = self.dest.get_complete_by_str(src_file_dict_path)[0]
+            if dest_ll is None:
+                continue
+            if self.match_score(src_file_dict_path, src_file_dict_path,
+                                src_langlabel, dest_ll) == self.MAX_SCORE:
+                perfect_matches.append(src_file_dict_path)
+
+        for match in perfect_matches:
+            self.assign(match, match)
+        return len(perfect_matches)
+
+    def assignment_algorithm(self, src_map, dest_map, prio_queue,
+                             perfect_score=None, minimum_score=0):
+        """Attempt to find an assignment from src_map to dest_map
+
+        src_map must be a subset of self.src and dest_map must be a subset
+        of self.dest.  prio_queue must be a list.
+        If perfect_score is set and reached, then assume this is the best
+        possible outcome and assign it on the spot, to stop trying to search
+        for anything better.
+
+        After this runs, prio_queue will contain a heap with the best scores
+        sorted first.  The prio_queue will be a list of
+        (-score, src_file_dict_path, dest_file_dict_path)
+
+        Return the number of assignment done because of perfect_score
+        """
+        if perfect_score is None:
+            perfect_score = 2**30
+        perfect_matches = 0
+        for src_file_dict_path, src_langlabel in src_map.items():
+            potential_mappings = []
+            for dest_file_dict_path, dest_langlabel in dest_map.items():
+                score = self.match_score(src_file_dict_path,
+                                         dest_file_dict_path,
+                                         src_langlabel, dest_langlabel)
+                if score >= perfect_score:
+                    self.assign(src_file_dict_path, dest_file_dict_path)
+                    perfect_matches += 1
+                    del dest_map[dest_file_dict_path]
+                    break
+                if score <= minimum_score:
+                    continue
+                potential_mappings.append((-score,
+                                           src_file_dict_path,
+                                           dest_file_dict_path))
+            else:
+                for mapping in potential_mappings:
+                    heapq.heappush(prio_queue, mapping)
+        return perfect_matches
+
+    def assign_by_prio_queue(self, prio_queue):
+        for _, src_file_dict_path, dest_file_dict_path in prio_queue:
+            if not self.src.has(src_file_dict_path):
+                continue
+            if not self.dest.has(dest_file_dict_path):
+                continue
+            self.assign(src_file_dict_path, dest_file_dict_path)
+
+    @staticmethod
+    def sort_by_file(string_cache):
+        by_file = {}
+        for langlabel, _, file_dict_path_str, _ in string_cache.iterate():
+            file_str = common.split_file_dict_path(file_dict_path_str)[0]
+            map_for_file = by_file.setdefault(file_str, {})
+            map_for_file[file_dict_path_str] = langlabel
+        return by_file
+    def do_same_file_map(self):
+        """Assign lang files that moved within the same file
+
+        Return number of drained elements, number of perfect matches"""
+
+        orig_size = self.src.size()
+        src_by_file = self.sort_by_file(self.src)
+        dest_by_file = self.sort_by_file(self.dest)
+        perfect_matches = 0
+
+        for src_file_str, src_per_file_map in src_by_file.items():
+            dest_per_file_map = dest_by_file.get(src_file_str)
+            if dest_per_file_map is None:
+                continue
+
+            prio_queue = []
+
+            perfects = self.assignment_algorithm(src_per_file_map,
+                                                 dest_per_file_map,
+                                                 prio_queue,
+                                                 self.SAME_FILE_MAX_SCORE)
+            perfect_matches += perfects
+            self.assign_by_prio_queue(prio_queue)
+
+        return orig_size - self.src.size(), perfect_matches
+
+    def do_remaining(self):
+        """Perform an assignment from everything to everything
+
+        This is slow, use it after everything else.
+        Return number of drained elements
+        """
+        def all_of_them(string_cache):
+            ret = {}
+            for langlabel, _, file_dict_path_str, _ in string_cache.iterate():
+                ret[file_dict_path_str] = langlabel
+            return ret
+        big_prio_queue = []
+        src_map = all_of_them(self.src)
+        dest_map = all_of_them(self.dest)
+        self.assignment_algorithm(src_map, dest_map, big_prio_queue)
+        self.assign_by_prio_queue(big_prio_queue)
+        return len(src_map) - self.src.size()
+
+    def do_everything(self, no_interfile_move=False):
+        perfect = self.do_greddy_map()
+        same_file, perfect_same_file = self.do_same_file_map()
+        remaining = 0
+        if not no_interfile_move:
+            remaining = self.do_remaining()
+
+        print("Migration statistics:")
+        print("Unchanged                   : %7d" % perfect)
+        print("Moved as-is in same file    : %7d" % perfect_same_file)
+        print("Found modified in same file : %7d" % same_file)
+        print("Matched in another file     : %7d" % remaining)
+        print("")
+        print("Unmigrated lang labels (to delete) : %7d" % self.src.size())
+        print("New lang labels                    : %7d" % self.dest.size())
+    def write_json(self, path):
+        unchanged = []
+        delete = []
+        migrate = {}
+        for from_str, to_str in self.map.items():
+            if from_str == to_str:
+                unchanged.append(from_str)
+            else:
+                migrate[from_str] = to_str
+        for _, _, file_dict_path_str, _ in self.src.iterate():
+            delete.append(file_dict_path_str)
+
+        unchanged.sort()
+        delete.sort()
+        migrate = common.sort_dict(migrate)
+
+        json = {"migrate": migrate, "delete": delete, "unchanged": unchanged}
+        common.save_json(path, json)
+
+
+def do_calcmigrate(args):
+    source = common.string_cache()
+    dest = common.string_cache()
+    source.load_from_file(args.source_string_cache)
+    dest.load_from_file(args.dest_string_cache)
+    migrator = MigrationCalculator(source, dest)
+    migrator.do_everything(bool(args.no_file_move))
+    migrator.write_json(args.migration_plan)
+
+
+def do_migrate(args):
+    sorter = get_sorter(args)
+    sparse_reader = get_sparse_reader(args)
+    plan = common.load_json(args.migration_plan)
+    to_delete = set(plan["delete"])
+    unchanged = set(plan["unchanged"])
+    migrate = plan["migrate"]
+    iterator = common.transform_file_or_dir(args.inputpath, args.outputpath)
+    for input_file, output_file, _ in iterator:
+        try:
+            src_pack = common.load_json(input_file)
+        except Exception as e:
+            print("Cannot read", input_file, ":", str(e))
+            continue
+
+        result = {}
+        for file_dict_path_str, value in src_pack.items():
+            if file_dict_path_str in unchanged:
+                result[file_dict_path_str] = value
+                continue
+            if file_dict_path_str in to_delete:
+                continue
+            new_file_dict_path_str = migrate.get(file_dict_path_str)
+            if new_file_dict_path_str is None:
+                print("No match for %s" % file_dict_path_str)
+                continue
+
+            value['orig'] = sparse_reader.get_str(new_file_dict_path_str)
+            result[new_file_dict_path_str] = value
+
+        common.save_json(output_file, sorter(result))
+
 
 def parse_args():
     import argparse
@@ -480,6 +734,42 @@ def parse_args():
                           help="""Where to write the output.  If '-', then
                                   output to the standard output""")
     difflang.set_defaults(func=do_diff_langfile)
+
+
+    calcmigrate = subparsers.add_parser(
+        'calcmigration', help="Migrate pack files from a version to another",
+        description="""Given a source string cache and a destination string
+                       cache, match source lang labels to destination lang
+                       labels using a matching algorithm and write a migration
+                       plan to apply later with 'migrate'.  This can be used
+                       to updrade packs to the latest version of the game.""")
+    calcmigrate.add_argument("source_string_cache",
+                             metavar="<source string cache>",
+                             help="""string cache containing lang labels to
+                                     migrate from""")
+    calcmigrate.add_argument("dest_string_cache", metavar="<dest string cache>",
+                             help="""string cache containing lang labels to
+                                     migrate to""")
+
+    calcmigrate.add_argument("migration_plan", metavar="<migration plan>",
+                             help="""Where to write the migration plan in JSON
+                                     format""")
+    calcmigrate.add_argument("--no-file-move", dest="no_file_move",
+                             action="store_true",
+                             help="""Do not match old lang labels into lang
+                                     labels in a different (game) file.""")
+    calcmigrate.set_defaults(func=do_calcmigrate)
+
+    migrate = subparsers.add_parser(
+        'migrate', help="""Given a pack file or directory and a migration plan,
+                           migrate it and write a new pack file or directory""")
+    migrate.add_argument("migration_plan", metavar="<migration plan file>",
+                         help="""Migration plan JSON file as calculated by
+                                 'calcmigration'""")
+    add_inputpath(migrate, help="""pack file or directory to migrate from""")
+    add_outputpath(migrate, help="""Where to write migrated pack file(s)""")
+    migrate.set_defaults(func=do_migrate)
+
 
     result = parser.parse_args()
     result.func(result)

@@ -227,6 +227,13 @@ def unserialize_dict_path(dict_path_str):
     raise ValueError("cannot unserialize that")
 
 
+def split_file_dict_path(file_dict_path_str):
+    delimiter = '.json/'
+    index = file_dict_path_str.index(delimiter)
+    file_path = file_dict_path_str[:index + len(delimiter) - 1]
+    dict_path = file_dict_path_str[index + len(delimiter):]
+    return file_path, dict_path
+
 
 def get_assets_path(path):
     realpath = os.path.realpath(path)
@@ -330,11 +337,17 @@ class string_cache:
             splitted_path = unserialize_dict_path(file_dict_path_str)
             yield entry["langlabel"], splitted_path, file_dict_path_str, entry
 
-    def add(self, dict_file_path_str, lang_label_like, extra=None):
+    def add(self, file_dict_path_str, lang_label_like, extra=None):
         entry = {"langlabel": lang_label_like}
         if extra is not None:
             entry.update(extra)
-        self.data[dict_file_path_str] = entry
+        self.data[file_dict_path_str] = entry
+    def delete(self, file_dict_path_str):
+        del self.data[file_dict_path_str]
+    def has(self, file_dict_path_str):
+        return file_dict_path_str in self.data
+    def size(self):
+        return len(self.data)
     def save_into_file(self, filename):
         save_json(filename, self.data)
     # sparse_dict_path_reader
