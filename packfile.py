@@ -358,6 +358,7 @@ class MigrationCalculator:
     def __init__(self, source_string_cache, destination_string_cache):
         self.src = source_string_cache
         self.dest = destination_string_cache
+        # Maps old file_dict_path to new file_dict_path (or None if unchanged)
         self.map = {}
 
     # the code below assumes same file matches trump all other matches
@@ -401,11 +402,14 @@ class MigrationCalculator:
             return cls.SAME_FILE_MAX_SCORE
         return base_score + field_score
 
-    def assign(self, src_file_dict_path, dest_file_dict_path):
+    def assign(self, src_file_dict_path, dest_file_dict_path, is_exact):
         """Assign the given source to the given dest and drain them
 
         Draining is used to reduce the pressure on the following algorithms"""
-        self.map[src_file_dict_path] = dest_file_dict_path
+        if is_exact and src_file_dict_path == dest_file_dict_path:
+            self.map[src_file_dict_path] = None
+        else:
+            self.map[src_file_dict_path] = dest_file_dict_path
         self.src.delete(src_file_dict_path)
         self.dest.delete(dest_file_dict_path)
 
@@ -424,7 +428,7 @@ class MigrationCalculator:
                 perfect_matches.append(src_file_dict_path)
 
         for match in perfect_matches:
-            self.assign(match, match)
+            self.assign(match, match, True)
         return len(perfect_matches)
 
     def assignment_algorithm(self, src_map, dest_map, prio_queue,
@@ -453,7 +457,7 @@ class MigrationCalculator:
                                          dest_file_dict_path,
                                          src_langlabel, dest_langlabel)
                 if score >= perfect_score:
-                    self.assign(src_file_dict_path, dest_file_dict_path)
+                    self.assign(src_file_dict_path, dest_file_dict_path, True)
                     perfect_matches += 1
                     del dest_map[dest_file_dict_path]
                     break
@@ -473,7 +477,7 @@ class MigrationCalculator:
                 continue
             if not self.dest.has(dest_file_dict_path):
                 continue
-            self.assign(src_file_dict_path, dest_file_dict_path)
+            self.assign(src_file_dict_path, dest_file_dict_path, False)
 
     @staticmethod
     def sort_by_file(string_cache):
@@ -547,7 +551,7 @@ class MigrationCalculator:
         delete = []
         migrate = {}
         for from_str, to_str in self.map.items():
-            if from_str == to_str:
+            if to_str is None:
                 unchanged.append(from_str)
             else:
                 migrate[from_str] = to_str
