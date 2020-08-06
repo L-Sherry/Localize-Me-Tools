@@ -397,7 +397,8 @@ class MigrationCalculator:
         if src_file_dict_path == dest_file_dict_path:
             base_score = cls.SAME_FILE + cls.SAME_DICT_PATH
         else:
-            src_file, src_path = common.split_file_dict_path(src_file_dict_path)
+            src_file_path = common.split_file_dict_path(src_file_dict_path)
+            src_file, src_path = src_file_path
             dest_file_path = common.split_file_dict_path(dest_file_dict_path)
             dest_file, dest_path = dest_file_path
             if src_file == dest_file:
@@ -506,6 +507,7 @@ class MigrationCalculator:
             map_for_file = by_file.setdefault(file_str, {})
             map_for_file[file_dict_path_str] = langlabel
         return by_file
+
     def do_same_file_map(self):
         """Assign lang files that moved within the same file
 
@@ -565,6 +567,7 @@ class MigrationCalculator:
         print("")
         print("Unmigrated lang labels (to delete) : %7d" % self.src.size())
         print("New lang labels                    : %7d" % self.dest.size())
+
     def write_json(self, path):
         unchanged = []
         delete = []
@@ -758,7 +761,6 @@ def parse_args():
                                   output to the standard output""")
     difflang.set_defaults(func=do_diff_langfile)
 
-
     calcmigrate = subparsers.add_parser(
         'calcmigration', help="Migrate pack files from a version to another",
         description="""Given a source string cache and a destination string
@@ -770,7 +772,8 @@ def parse_args():
                              metavar="<source string cache>",
                              help="""string cache containing lang labels to
                                      migrate from""")
-    calcmigrate.add_argument("dest_string_cache", metavar="<dest string cache>",
+    calcmigrate.add_argument("dest_string_cache",
+                             metavar="<destination string cache>",
                              help="""string cache containing lang labels to
                                      migrate to""")
 
@@ -785,14 +788,14 @@ def parse_args():
 
     migrate = subparsers.add_parser(
         'migrate', help="""Given a pack file or directory and a migration plan,
-                           migrate it and write a new pack file or directory""")
+                           migrate it and write a new pack file or
+                           directory""")
     migrate.add_argument("migration_plan", metavar="<migration plan file>",
                          help="""Migration plan JSON file as calculated by
                                  'calcmigration'""")
     add_inputpath(migrate, help="""pack file or directory to migrate from""")
     add_outputpath(migrate, help="""Where to write migrated pack file(s)""")
     migrate.set_defaults(func=do_migrate)
-
 
     result = parser.parse_args()
     result.func(result)
