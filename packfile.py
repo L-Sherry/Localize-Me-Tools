@@ -5,7 +5,6 @@ import hmac
 import hashlib
 import os
 import sys
-import heapq
 
 try:
     # The only thing not part of python
@@ -351,6 +350,26 @@ def do_diff_langfile(args):
     else:
         common.save_json(args.resultfile, result)
 
+
+class SparsePriorityQueue:
+    """A container that store values ordered by a score
+
+    It is assumed that values are way sparser than scores, i.e. they are
+    way less possible scores than there are values."""
+    def __init__(self):
+        # score => [values], that's it.
+        self.prio_to_value = {}
+
+    def insert(self, score, value):
+        """Insert a value with the given score"""
+        self.prio_to_value.setdefault(score, []).append(value)
+
+    def __iter__(self):
+        """Iterate on values only"""
+        for key in sorted(self.prio_to_value.keys()):
+            yield from self.prio_to_value[key]
+
+
 class MigrationCalculator:
     """Matches a source string cache to a destination string and migrate packs
 
@@ -436,14 +455,14 @@ class MigrationCalculator:
         """Attempt to find an assignment from src_map to dest_map
 
         src_map must be a subset of self.src and dest_map must be a subset
-        of self.dest.  prio_queue must be a list.
+        of self.dest.  prio_queue must be a SparsePriorityQueue.
         If perfect_score is set and reached, then assume this is the best
         possible outcome and assign it on the spot, to stop trying to search
         for anything better.
 
-        After this runs, prio_queue will contain a heap with the best scores
-        sorted first.  The prio_queue will be a list of
-        (-score, src_file_dict_path, dest_file_dict_path)
+        After this runs, prio_queue will contain a priority queue with the
+        best scores sorted first.  The prio_queue's values will be
+        (src_file_dict_path, dest_file_dict_path)
 
         Return the number of assignment done because of perfect_score
         """
@@ -464,15 +483,15 @@ class MigrationCalculator:
                 if score <= minimum_score:
                     continue
                 potential_mappings.append((-score,
-                                           src_file_dict_path,
-                                           dest_file_dict_path))
+                                           (src_file_dict_path,
+                                            dest_file_dict_path)))
             else:
-                for mapping in potential_mappings:
-                    heapq.heappush(prio_queue, mapping)
+                for score, mapping in potential_mappings:
+                    prio_queue.insert(score, mapping)
         return perfect_matches
 
     def assign_by_prio_queue(self, prio_queue):
-        for _, src_file_dict_path, dest_file_dict_path in prio_queue:
+        for src_file_dict_path, dest_file_dict_path in prio_queue:
             if not self.src.has(src_file_dict_path):
                 continue
             if not self.dest.has(dest_file_dict_path):
@@ -502,7 +521,7 @@ class MigrationCalculator:
             if dest_per_file_map is None:
                 continue
 
-            prio_queue = []
+            prio_queue = SparsePriorityQueue()
 
             perfects = self.assignment_algorithm(src_per_file_map,
                                                  dest_per_file_map,
@@ -524,7 +543,7 @@ class MigrationCalculator:
             for langlabel, _, file_dict_path_str, _ in string_cache.iterate():
                 ret[file_dict_path_str] = langlabel
             return ret
-        big_prio_queue = []
+        big_prio_queue = SparsePriorityQueue()
         src_map = all_of_them(self.src)
         dest_map = all_of_them(self.dest)
         self.assignment_algorithm(src_map, dest_map, big_prio_queue)
