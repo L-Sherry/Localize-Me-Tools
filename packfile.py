@@ -203,12 +203,15 @@ def do_diff_langfile(args):
     else:
         file_path = ["lang", "sc", os.path.basename(args.fileorig)]
     result = {}
-    iterator = common.walk_langfile_json(from_json, "orig")
-    for trans, dict_path, _ in iterator:
+    # This is arbitrary. "foobar" or "en_US" would also work.
+    from_locale = args.from_locale
+    iterator = common.walk_langfile_json({from_locale: from_json}, [], [])
+    for langlabel, dict_path, _ in iterator:
         text = common.get_data_by_dict_path(to_json, dict_path)
         if text is None:
             continue
-        trans['text'] = text
+        trans = {"orig": langlabel[from_locale], "text": text}
+
         result[common.serialize_dict_path(file_path, dict_path)] = trans
     # we are already sorted by game order
     if args.sort_order == "alpha":
