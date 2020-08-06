@@ -261,6 +261,22 @@ class MigrationCalculator:
     SAME_FILE_MAX_SCORE = 5000
 
     @classmethod
+    def base_match_score(cls, src_file_dict_path, dest_file_dict_path):
+        """Calculate the base match score from file dict paths alone."""
+        if src_file_dict_path == dest_file_dict_path:
+            return cls.SAME_FILE + cls.SAME_DICT_PATH
+
+        src = common.split_file_dict_path(src_file_dict_path)
+        src_file, src_path = src
+        dest = common.split_file_dict_path(dest_file_dict_path)
+        dest_file, dest_path = dest
+        if src_file == dest_file:
+            return cls.SAME_FILE
+        if src_path == dest_path:
+            return cls.SAME_DICT_PATH
+        return 0
+
+    @classmethod
     def match_score(cls, src_file_dict_path, dest_file_dict_path,
                     src_langlabel, dest_langlabel):
         """Return a score indicating how the old and new lang label matches.
@@ -268,23 +284,14 @@ class MigrationCalculator:
         The higher the score, the closer the two lang labels are related.
 
         If it returns 0, then matching should be forbidden."""
-        base_score = 0
-        if src_file_dict_path == dest_file_dict_path:
-            base_score = cls.SAME_FILE + cls.SAME_DICT_PATH
-        else:
-            src_file_path = common.split_file_dict_path(src_file_dict_path)
-            src_file, src_path = src_file_path
-            dest_file_path = common.split_file_dict_path(dest_file_dict_path)
-            dest_file, dest_path = dest_file_path
-            if src_file == dest_file:
-                base_score = cls.SAME_FILE
-            elif src_path == dest_path:
-                base_score += cls.SAME_DICT_PATH
+
+        base_score = cls.base_match_score(src_file_dict_path,
+                                          dest_file_dict_path)
 
         field_perfect = True
         field_score = 0
         for key, value in src_langlabel.items():
-            if value == "" or value == key:
+            if not value or value == key:
                 continue
             if dest_langlabel.get(key) == value:
                 field_score += cls.SAME_FIELD
@@ -327,7 +334,7 @@ class MigrationCalculator:
         return len(perfect_matches)
 
     def assignment_algorithm(self, src_map, dest_map, prio_queue,
-                             perfect_score=None, minimum_score=0):
+                             perfect_score=None):
         """Attempt to find an assignment from src_map to dest_map
 
         src_map must be a subset of self.src and dest_map must be a subset
@@ -356,7 +363,7 @@ class MigrationCalculator:
                     perfect_matches += 1
                     del dest_map[dest_file_dict_path]
                     break
-                if score <= minimum_score:
+                if score <= 0:
                     continue
                 potential_mappings.append((-score,
                                            (src_file_dict_path,
@@ -501,8 +508,11 @@ def do_migrate(args):
     for input_file, output_file, _ in iterator:
         try:
             src_pack = common.load_json(input_file)
-        except Exception as e:
-            print("Cannot read", input_file, ":", str(e))
+        except OSError as error:
+            print("Cannot read", input_file, ":", str(error))
+            continue
+        except ValueError as error:
+            print("File", input_file, "contains invalid JSON:", str(error))
             continue
 
         result = {}
