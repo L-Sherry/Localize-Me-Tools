@@ -26,8 +26,9 @@ packfile.py
 -----------
 
 This tool can be used to create map files, split big packfiles using map files,
-merge small packfiles into a big one (and optionally sort it) or create a
-packfile out of a untranslated and translated lang file.
+merge small packfiles into a big one (and optionally sort it), create a
+packfile out of a untranslated and translated lang file or migrate pack
+files to account for updates to the game.
 
 - Merge multiple pack files into one, for easier editing:
 
@@ -43,3 +44,36 @@ packfile out of a untranslated and translated lang file.
 - Diff two langfiles to create a pack file.
   (This only work for lang files, i.e. files under data/lang/)
 ./packfile.py difflang original/lang.en_US.json translated/lang.es_ES.json resulting_packfile.json
+
+- Migrate one or multiple pack files with the latest version of the game:
+
+Migrating pack files is done by calculating a migration plan file and then
+apply it.  The migration plan file indicate how strings were changed/moved
+between two versions.  Its format is simple enough that it may be edited by
+hand to fine tune it and then share it with others.
+
+To generate a migration plan, the jsontr.py's caching features are required.
+Create two string caches for the two version of the game:
+(both these commands may take some time to run)
+
+./jsontr.py --game-dir path/to/old/crosscode/version --string-cache old_strings.json save_cache
+./jsontr.py --game-dir path/to/new/crosscode/version --string-cache new_strings.json save_cache
+
+At that point, old_strings.json and new_strings.json will contain all texts
+used by both version of the game.
+
+The next command will automatically calculate the best way to migrate
+a pack file and write a "migration plan" file:
+
+./packfile.py calcmigration old_strings.json new_strings.json migration_plan.json
+
+The format of the migration plan file is easy to grok and modify.
+It may even be improved and shared with others.
+
+To do the actual migration using the migration plan file, run:
+
+./packfile.py --string-cache new_cache.json migrate migration_plan.json old_packs_dir/ new_pack_dir/
+
+migrate also works with single files.  It is also possible to replace
+--string-cache new_cache.json with --game-dir path/to/new/crosscode/version
+(e.g. in case you received the migration plan from somebody else)
