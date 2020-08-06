@@ -1,82 +1,118 @@
 #!/usr/bin/python3
 
+"""Set of utilities to manipulate pack files.  Run --help for details."""
+
 import os
 import sys
 import common
 
 
 def sort_by_game(game_walker, from_locale, pack):
+    """Sort a pack by the order in which strings appears in the game files.
+
+    This is one of the slowest sorting method.  If the pack contains strings
+    that are not present in the game, they are sorted alphabetically at the
+    end and a message is logged."""
+
     def get_file_path_tuple(file_dict_path_str):
         return tuple(common.unserialize_dict_path(file_dict_path_str)[0])
 
-    # file_path_tuple => pack for that file path
-    packs_by_file = {}
-    for file_dict_path_str, result in pack.items():
-        file_path_tuple = get_file_path_tuple(file_dict_path_str)
-        pack = packs_by_file.setdefault(file_path_tuple, {})
-        pack[file_dict_path_str] = result
+    def get_packs_by_file(pack):
+        """Return a dict from file_path_tuple to a pack for that file path"""
+        packs_by_file = {}
+        for file_dict_path_str, result in pack.items():
+            file_path_tuple = get_file_path_tuple(file_dict_path_str)
+            pack = packs_by_file.setdefault(file_path_tuple, {})
+            pack[file_dict_path_str] = result
+        return packs_by_file
+
+    packs_by_file = get_packs_by_file(pack)
 
     known_files = frozenset(packs_by_file.keys())
     game_walker.set_file_path_filter(lambda f_p: tuple(f_p) in known_files)
 
-    current_file = None
-    strings_for_file = None
+    def iterate_game_and_pick_translations(packs_by_file, game_walker):
+        """Iterate with game_walker and drain packs_by_file
 
-    output = {}
+        Return a sorted single pack with elements in the same order as
+        returned by game_walker with translations from packs_by_file.
 
-    def add_stale_for_current_file():
-        if strings_for_file:
-            print("note: sorting", len(strings_for_file),
-                  "stale nonexisting strings for", "/".join(current_file))
-            output.update(common.sort_dict(strings_for_file))
-            strings_for_file.clear()
+        This will drain packs_by_file in the process, so only stale strings
+        will remain there."""
 
-    iterator = game_walker.walk(from_locale, False)
+        output = {}
+        iterator = game_walker.walk(from_locale, False)
 
-    for file_dict_path_str, _, _, _ in iterator:
-        file_path = get_file_path_tuple(file_dict_path_str)
-        if current_file != file_path:
-            add_stale_for_current_file()
-            current_file = file_path
-            strings_for_file = packs_by_file.pop(file_path, {})
+        current_file = None
+        strings_for_file = None
 
-        result = strings_for_file.pop(file_dict_path_str, None)
-        if result is not None:
-            output[file_dict_path_str] = result
+        def add_stale_for_current_file():
+            """Add strings remaining in strings_for_file to stale translations
 
-    # sort remains of the last file
-    add_stale_for_current_file()
+            Called after iterating for all strings in one game file."""
+            if strings_for_file:
+                print("note: sorting", len(strings_for_file),
+                      "stale nonexisting strings for", "/".join(current_file))
+                output.update(common.sort_dict(strings_for_file))
+                strings_for_file.clear()
+
+        for file_dict_path_str, _, _, _ in iterator:
+            file_path = get_file_path_tuple(file_dict_path_str)
+            if current_file != file_path:
+                add_stale_for_current_file()
+                current_file = file_path
+                strings_for_file = packs_by_file.pop(file_path, {})
+
+            result = strings_for_file.pop(file_dict_path_str, None)
+            if result is not None:
+                output[file_dict_path_str] = result
+
+        # sort remains of the last file
+        add_stale_for_current_file()
+        return output
+
+    output = iterate_game_and_pick_translations(packs_by_file, game_walker)
 
     # sort the remaining stales file_path, and add them
-    for file_path, pack in common.sort_dict(packs_by_file):
-        print("note: sorting", len(pack), "strings for nonexisting",
+    for file_path, stale_pack in common.sort_dict(packs_by_file):
+        print("note: sorting", len(stale_pack), "strings for nonexisting",
               "/".join(file_path))
-        output.update(common.sort_dict(pack))
+        output.update(common.sort_dict(stale_pack))
 
     return output
 
 
 def get_walker(args):
+    """Return a correctly configured GameWalker given argparse parameters"""
     return common.GameWalker(game_dir=args.gamedir,
                              string_cache_path=args.string_cache,
                              from_locale=args.from_locale)
 
 
 def get_sorter(args):
+    """Return a pack sorting function according to the argparse parameters.
+
+    This sort function takes one pack as parameter and returns another.
+    The parameter may be modified and should not be used afterward.
+    """
     if args.sort_order == "none":
         return lambda pack: pack
-    elif args.sort_order == "alpha":
+    if args.sort_order == "alpha":
         return common.sort_dict
-    elif args.sort_order == "game":
+    if args.sort_order == "game":
         walker = get_walker(args)
         from_locale = args.from_locale
         return lambda pack: sort_by_game(walker, from_locale, pack)
-    else:
-        raise ValueError("Invalid sort order %s (allowed: none, alpha, game)"
-                         % repr(args.sort_order))
+
+    raise ValueError("Invalid sort order %s (allowed: none, alpha, game)"
+                     % repr(args.sort_order))
 
 
 def get_sparse_reader(args):
+    """Return a configured sparse reader given argparse parameters.
+
+    This will pick the one with the highest performance.  It will prefer
+    string caches to browsing every game file."""
     # TODO: this duplicates code in jsontr.py, should move this into GameWalker
     if os.path.exists(args.string_cache):
         string_cache = common.string_cache(args.from_locale)
@@ -87,6 +123,7 @@ def get_sparse_reader(args):
 
 
 def do_make_mapfile(args):
+    """Create a default mapfile with a one file to one file mapping."""
     json = common.load_json(args.bigpack)
     result = {}
     prefix = args.prefix
@@ -100,6 +137,7 @@ def do_make_mapfile(args):
 
 
 def do_split(args):
+    """Split a large packfile to multiple ones according to a mapfile"""
     sorter = get_sorter(args)
 
     big_pack = common.load_json(args.bigpack)
@@ -135,6 +173,7 @@ def do_split(args):
 
 
 def do_merge(args):
+    """Merge multiple pack files into one big pack file."""
     sorter = get_sorter(args)
 
     big_result = {}
@@ -156,6 +195,7 @@ def do_merge(args):
 
 
 def do_diff_langfile(args):
+    """Calculate a pack file given two lang files."""
     from_json = common.load_json(args.fileorig)
     to_json = common.load_json(args.filetrans)
     if "filename" in args and args.filename is not None:
@@ -220,7 +260,11 @@ class MigrationCalculator:
     @classmethod
     def match_score(cls, src_file_dict_path, dest_file_dict_path,
                     src_langlabel, dest_langlabel):
-        """If it returns 0, then match should be forbidden"""
+        """Return a score indicating how the old and new lang label matches.
+
+        The higher the score, the closer the two lang labels are related.
+
+        If it returns 0, then matching should be forbidden."""
         base_score = 0
         if src_file_dict_path == dest_file_dict_path:
             base_score = cls.SAME_FILE + cls.SAME_DICT_PATH
@@ -320,6 +364,9 @@ class MigrationCalculator:
         return perfect_matches
 
     def assign_by_prio_queue(self, prio_queue):
+        """Walk into the priority queue and assign those with the best score.
+
+        This unfortunately have to browse through the entire priority queue."""
         for src_file_dict_path, dest_file_dict_path in prio_queue:
             if not self.src.has(src_file_dict_path):
                 continue
@@ -329,6 +376,10 @@ class MigrationCalculator:
 
     @staticmethod
     def sort_by_file(string_cache):
+        """Return a dict from file_path to a dict from dict_path to lang labels
+
+        i.e. a file_path => (dict_path => lang_label)."""
+
         by_file = {}
         for langlabel, _, file_dict_path_str, _ in string_cache.iterate():
             file_str = common.split_file_dict_path(file_dict_path_str)[0]
@@ -381,6 +432,13 @@ class MigrationCalculator:
         return len(src_map) - self.src.size()
 
     def do_everything(self, no_interfile_move=False):
+        """Run the entire algorithm, which will:
+        - Assign greddily lang labels that didn't change.
+        - Try to detect lang labels that moved or were changed within a file.
+        - Try to detect lang labels that moved or were changed across files
+          (unless no_interfile_move is false).
+
+        Will print statistics on standard output when finished."""
         perfect = self.do_greddy_map()
         same_file, perfect_same_file = self.do_same_file_map()
         remaining = 0
@@ -397,6 +455,7 @@ class MigrationCalculator:
         print("New lang labels                    : %7d" % self.dest.size())
 
     def write_json(self, path):
+        """Write a migration plan as json to a file"""
         unchanged = []
         delete = []
         migrate = {}
@@ -417,6 +476,7 @@ class MigrationCalculator:
 
 
 def do_calcmigrate(args):
+    """Calculate a migration plan from two string caches."""
     source = common.string_cache()
     dest = common.string_cache()
     source.load_from_file(args.source_string_cache)
@@ -427,6 +487,7 @@ def do_calcmigrate(args):
 
 
 def do_migrate(args):
+    """Migrate one or more pack file according to a migration plan."""
     sorter = get_sorter(args)
     sparse_reader = get_sparse_reader(args)
     plan = common.load_json(args.migration_plan)
@@ -460,6 +521,7 @@ def do_migrate(args):
 
 
 def parse_args():
+    """Parse the command line parameters"""
     import argparse
     parser = argparse.ArgumentParser(description="Command to manage pack"
                                                  " files\n")

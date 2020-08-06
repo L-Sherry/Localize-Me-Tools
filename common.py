@@ -7,7 +7,9 @@ import os.path
 import tags as tagger
 
 def load_json(path):
-    """Load a json file given a path"""
+    """Load a json file given a path.
+
+    Can raise both OSError and json.ValueError (extends ValueError)"""
     return json.load(open(path, encoding="utf-8"))
 
 def save_json_to_fd(fd, value):
@@ -123,7 +125,7 @@ def walk_json_filtered_inner(json_obj, filterfunc):
 def walk_json_filtered(json_obj, filterfunc):
     """Walk into a JSON object and yield sub-objects matching a filter
 
-    Yields the same fields as walk_json_filtered(), but only if
+    Yields the same fields as walk_json_inner(), but only if
     filterfunc(subobject) is trueish.  Note that subobject will not be recursed
     into if filterfunc(subobject) is true.
     """
