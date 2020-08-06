@@ -26,25 +26,8 @@ packfile.py
 -----------
 
 This tool can be used to create map files, split big packfiles using map files,
-merge small packfiles into a big one (and optionally sort it), create a
-packfile out of a untranslated and translated lang file, or encrapt/decrapt
-packfiles.
-
-- Decrypt one or multiple pack files:
-(you may need to add --from-locale=de_DE if e.g. the translation is made from
- the de_DE locale instead of the default en_US)
-
-./packfile.py --game-dir location/of/original/game decrapt encrapted_pack.json decrapted_pack.json
-or
-./packfile.py --game-dir location/of/original/game decrapt encrapted_pack_dir/ decrapted_pack_dir/
-
-- Encrypt (with weak crypto) one or multiple pack files.  This is optional,
-  but this is a way to not distribute the entire original copyrighted text
-  as part of your translation.
-
-./packfile.py --game-dir location/of/original/game encrapt my_pack.json encrapted.json
-or
-./packfile.py --game-dir location/of/original/game encrapt my_dir/ encrapted_dir/
+merge small packfiles into a big one (and optionally sort it) or create a
+packfile out of a untranslated and translated lang file.
 
 - Merge multiple pack files into one, for easier editing:
 

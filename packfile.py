@@ -1,110 +1,8 @@
 #!/usr/bin/python3
 
-import base64
-import hmac
-import hashlib
 import os
 import sys
-
-try:
-    # The only thing not part of python
-    import Crypto.Cipher.AES
-except Exception:
-    print("pycrypto not found. crypto operations will fail !")
-
 import common
-
-
-class Encraption:
-    """Encrapt stuff to protect against lawyers
-
-    Encrapt stuff so that lawyers cannot tell us we're distributing copyrighted
-    stuff in the 'orig' and derived works in 'text' to people that don't
-    have the original material.
-
-    Any lawless thug can workaround this encraption, that's not the problem.
-
-    List of things that we do that would horify a crypto researcher:
-    - md5 of low entropy text as key derivation
-    - key == iv
-    - mac key = aes key
-    - vulnerable reimplementation of pkcs7
-    - encrypt and mac
-    """
-    def __init__(self, orig_text):
-        self.key = hashlib.md5(orig_text.encode('utf-8')).digest()
-
-    # no pkcs7 in pycrypto ?
-    @staticmethod
-    def _pkcs7pad(pad_length):
-        return bytes(pad_length for x in range(pad_length))
-
-    def _aes(self):
-        return Crypto.Cipher.AES.new(self.key, Crypto.Cipher.AES.MODE_CBC,
-                                     self.key)
-
-    def encrapt_text(self, text):
-        text = text.encode("utf-8")
-        pad_length = 16 - len(text) % 16
-        padded_text = text + self._pkcs7pad(pad_length)
-        ciphertext = self._aes().encrypt(padded_text)
-        return base64.b64encode(ciphertext).decode('ascii')
-
-    def decrapt_text(self, ciphertext):
-        ciphertext = base64.b64decode(ciphertext.encode('ascii'))
-        # hey, i only need to defend against lawyers.
-        padded_text = self._aes().decrypt(ciphertext)
-        pad_length = padded_text[-1]
-        if not (0 < pad_length <= 16
-                and padded_text[-pad_length:] == self._pkcs7pad(pad_length)):
-            print("ciphertext:", repr(ciphertext))
-            print("decrapt:", repr(padded_text), "with key", repr(self.key))
-            print("FAIIIIIIIIIIIIIIIIL")
-            raise ValueError("bad pcks7 padding")
-        # print("decrapt[:-pad]:", repr(padded_text[:-pad_length]))
-        return padded_text[:-pad_length].decode('utf-8')
-
-    def mac_text(self, text):
-        # didn't find anything else but md5 in the loaded JS.
-        mac = hmac.digest(self.key, text.encode('utf-8'), 'md5')
-        return base64.b64encode(mac).decode('ascii')
-
-    @staticmethod
-    def encrapt_trans(trans_object):
-
-        enc = Encraption(trans_object['orig'])
-        text = trans_object['text']
-
-        ret = {"ciphertext": enc.encrapt_text(text), "mac": enc.mac_text(text)}
-
-        quality = trans_object.get('quality')
-        if quality is not None:
-            ret["quality"] = quality
-        if "reason" in trans_object:
-            # was equivalent to 'note'
-            raise ValueError("Throw out this old file, bro")
-        note = trans_object.get('note')
-        if note:
-            ret["ciphernote"] = enc.encrapt_text(note)
-        return ret
-
-    @staticmethod
-    def decrapt_trans(trans_object, orig):
-        if "text" in trans_object:
-            raise ValueError("It's not encrypted ?")
-        enc = Encraption(orig)
-        text = enc.decrapt_text(trans_object["ciphertext"])
-        mac = trans_object.get("mac")
-        if mac is not None and mac != enc.mac_text(text):
-            raise ValueError("MAC mismatch")
-        ret = {'orig': orig, 'text': text}
-        quality = trans_object.get("quality")
-        if quality is not None:
-            ret["quality"] = quality
-        ciphernote = trans_object.get("ciphernote")
-        if ciphernote is not None:
-            ret["note"] = enc.decrapt_text(ciphernote)
-        return ret
 
 
 def sort_by_game(game_walker, from_locale, pack):
@@ -186,76 +84,6 @@ def get_sparse_reader(args):
         return string_cache
     return common.sparse_dict_path_reader(args.gamedir,
                                           args.from_locale)
-
-
-def do_encrapt(args):
-    sorter = get_sorter(args)
-
-    try:
-        sparse_reader = get_sparse_reader(args)
-    except Exception as e:
-        sparse_reader = None
-        print("Cannot find game assets:", str(e),
-              " continuing by trusting the packfiles")
-
-    error = False
-    iterator = common.transform_file_or_dir(args.inputpath, args.outputpath)
-    for input_file, output_file, rel_path in iterator:
-        json = common.load_json(input_file)
-        result = {}
-        for file_dict_path_str, value in json.items():
-            orig_in_file = value.get('orig')
-            orig_in_game = None
-            if sparse_reader is not None:
-                orig_in_game = sparse_reader.get_str(file_dict_path_str)
-                if orig_in_file is None:
-                    value['orig'] = orig_in_game
-                elif orig_in_game is not None and orig_in_game != orig_in_file:
-                    orig_in_game = None
-                if orig_in_game is None:
-                    print("Not encrapting stale translation at",
-                          file_dict_path_str)
-                    print("true orig:", orig_in_game)
-                    print(" our orig:", orig_in_file)
-                    error = True
-                    continue
-            result[file_dict_path_str] = Encraption.encrapt_trans(value)
-        common.save_json(output_file, sorter(result))
-    if error:
-        sys.exit(1)
-
-
-def do_decrapt(args):
-    sorter = get_sorter(args)
-    sparse_reader = get_sparse_reader(args)
-    iterator = common.transform_file_or_dir(args.inputpath, args.outputpath)
-    error = False
-    for input_file, output_file, _ in iterator:
-        try:
-            json = common.load_json(input_file)
-        except Exception as e:
-            print("Cannot read", input_file, ":", str(e))
-            continue
-        result = {}
-        for file_dict_path_str, value in json.items():
-            # print("filedictpath", repr(file_dict_path_str))
-            orig = sparse_reader.get_str(file_dict_path_str)
-            if orig is None:
-                print("Cannot read original translation at",
-                      file_dict_path_str)
-                error = True
-                continue
-            try:
-                decrapted = Encraption.decrapt_trans(value, orig)
-            except Exception as e:
-                print("Cannot decrypt (is translation stale?):", str(e),
-                      "at", file_dict_path_str)
-                error = True
-                continue
-            result[file_dict_path_str] = decrapted
-        common.save_json(output_file, sorter(result))
-    if error:
-        sys.exit(1)
 
 
 def do_make_mapfile(args):
@@ -676,27 +504,6 @@ def parse_args():
         parser.add_argument("bigpack", metavar="<big pack>", help=halp)
 
     subparsers = parser.add_subparsers(metavar="COMMAND", required=True)
-    encrapt = subparsers.add_parser(
-        'encrapt', help="encrypt one or multiple packfiles",
-        description="""read one or multiple pack files and write the
-                       encrapted output.  If the input is a directory, the
-                       output must be a directory.""")
-    add_inputpath(encrapt, help="""unencrypted pack file or directory
-                                   containing pack files""")
-    add_outputpath(encrapt, help="""where to write encrapted pack file(s)""")
-    encrapt.set_defaults(func=do_encrapt)
-
-    decrapt = subparsers.add_parser(
-        'decrapt', help="decrypt one or multiple packfiles",
-        description="""read one or multiple pack files and write the
-                       decrapted output.  This command requires --gamedir
-                       and --from-locale to be set correctly.  If the input
-                       is a directory, the output must be a directory.""")
-    add_inputpath(decrapt, help="""encrapted pack file or directory containing
-                                   pack files""")
-    add_outputpath(decrapt, help="""where to write decrapted pack file(s)""")
-    decrapt.set_defaults(func=do_decrapt)
-
     make_map = subparsers.add_parser(
         'mkmap', help="create a default map file for 'split'",
         description="""Read a big packfile and write a map file
