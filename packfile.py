@@ -497,14 +497,43 @@ def do_calcmigrate(args):
     migrator.write_json(args.migration_plan)
 
 
+def migrate_pack(args, plan, sparse_reader, packfile):
+    """Migrate a single pack according to a migration plan."""
+    result = {}
+    for file_dict_path_str, value in packfile.items():
+        if file_dict_path_str in plan.unchanged:
+            result[file_dict_path_str] = value
+            continue
+        if file_dict_path_str in plan.to_delete:
+            continue
+
+        new_file_dict_path_str = plan.migrate.get(file_dict_path_str)
+        if new_file_dict_path_str is None:
+            if args.keep_texts:
+                result[file_dict_path_str] = value
+            else:
+                print("Unknown text: %s" % file_dict_path_str)
+            continue
+
+        new_orig = sparse_reader.get_str(new_file_dict_path_str)
+        if new_orig != value['orig']:
+            if args.mark_unknown:
+                value["quality"] = "unknown"
+            if not args.no_orig:
+                value['orig'] = new_orig
+        result[new_file_dict_path_str] = value
+
+    return result
+
+
 def do_migrate(args):
-    """Migrate one or more pack file according to a migration plan."""
+    """Migrate one or more pack file according to a migration file."""
     sorter = get_sorter(args)
     sparse_reader = get_sparse_reader(args)
     plan = common.load_json(args.migration_plan)
-    to_delete = set(plan["delete"])
-    unchanged = set(plan["unchanged"])
-    migrate = plan["migrate"]
+    plan = types.SimpleNamespace(to_delete=set(plan["delete"]),
+                                 unchanged=set(plan["unchanged"]),
+                                 migrate=plan["migrate"])
     iterator = common.transform_file_or_dir(args.inputpath, args.outputpath)
     for input_file, output_file, _ in iterator:
         try:
@@ -516,22 +545,9 @@ def do_migrate(args):
             print("File", input_file, "contains invalid JSON:", str(error))
             continue
 
-        result = {}
-        for file_dict_path_str, value in src_pack.items():
-            if file_dict_path_str in unchanged:
-                result[file_dict_path_str] = value
-                continue
-            if file_dict_path_str in to_delete:
-                continue
-            new_file_dict_path_str = migrate.get(file_dict_path_str)
-            if new_file_dict_path_str is None:
-                print("No match for %s" % file_dict_path_str)
-                continue
+        dst_pack = migrate_pack(args, plan, sparse_reader, src_pack)
 
-            value['orig'] = sparse_reader.get_str(new_file_dict_path_str)
-            result[new_file_dict_path_str] = value
-
-        common.save_json(output_file, sorter(result))
+        common.save_json(output_file, sorter(dst_pack))
 
 
 def parse_args():
@@ -543,7 +559,7 @@ def parse_args():
                         default='.', dest="gamedir",
                         help="""Location of the installed game's assets/
                         directory. Any subdirectory of it is also accepted.
-                        Search around the current directory by default.""")
+                        Searchs around the current directory by default.""")
     parser.add_argument('--from-locale', '-l', metavar="locale",
                         default="en_US", dest="from_locale",
                         help="""Locale used for origin, defaults to en_US.""")
@@ -681,7 +697,21 @@ def parse_args():
      .option("migration_plan", metavar="<migration plan file>",
              help="Migration plan JSON file as calculated by 'calcmigration'")
      .option("inputpath", help="""pack file or directory to migrate from""")
-     .option("outputpath", help="""Where to write migrated pack file(s)""")
+     .option("outputpath", help="""Where to write migrated pack file(s).
+             Setting the same input and output to overwrite it is
+             supported.""")
+     .option("--no-orig", dest="no_orig", action="store_true",
+             help="""Do not update the 'orig' fields in the pack.
+             This allows using jsontr afterward to interactively review each
+             'orig' change.""")
+     .option("--mark-unknown", dest="mark_unknown", action="store_true",
+             help="""If the 'orig' field changed, add a quality field with
+             value 'unknown', indicating to jsontr or other programs that
+             the translation must be reviewed for correctness.""")
+     .option("--keep-unknown-texts", dest="keep_texts", action="store_true",
+             help="""Do not remove strings that are not present neither in the
+             old version nor in the new version of the game.  By default, these
+             strings are removed and a warning is logged.""")
      )
 
     result = parser.parse_args()
