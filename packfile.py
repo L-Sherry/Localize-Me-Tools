@@ -277,6 +277,19 @@ class MigrationCalculator:
             return cls.SAME_DICT_PATH
         return 0
 
+    @staticmethod
+    def strip_annotations(string):
+        """Strip annotations from the given string.
+
+        if the parameter is not a string, it is returned as-is"""
+        if not isinstance(string, str):
+            return string
+        for anno in ('<<A<<', '<<C<<'):
+            index = string.find(anno)
+            if index != -1:
+                string = string[:index]
+        return string
+
     @classmethod
     def match_score(cls, src_file_dict_path, dest_file_dict_path,
                     src_langlabel, dest_langlabel):
@@ -292,13 +305,16 @@ class MigrationCalculator:
         field_perfect = True
         field_score = 0
         for key, value in src_langlabel.items():
+            value = cls.strip_annotations(value)
             if not value or value == key:
                 continue
-            if dest_langlabel.get(key) == value:
+            if cls.strip_annotations(dest_langlabel.get(key)) == value:
                 field_score += cls.SAME_FIELD
             else:
                 field_perfect = False
 
+        if field_score == 0 and not field_perfect:
+            return 0
         if base_score == cls.SAME_FILE + cls.SAME_DICT_PATH and field_perfect:
             return cls.MAX_SCORE
         if base_score == cls.SAME_FILE and field_perfect:
