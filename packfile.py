@@ -4,6 +4,7 @@
 
 import os
 import sys
+import types
 import common
 
 
@@ -565,119 +566,123 @@ def parse_args():
                         "game" mean to sort by the order in which they appear
                         in the game file(s) (slow).""")
 
-    def add_stuffpath(stuff, parser, **kw):
-        kw.setdefault("metavar", "<%s dir or file>" % stuff)
-        parser.add_argument("%spath" % stuff, **kw)
-
-    def add_inputpath(parser, **kw):
-        add_stuffpath("input", parser, **kw)
-
-    def add_outputpath(parser, **kw):
-        add_stuffpath("output", parser, **kw)
-
-    def add_bigpack(parser, halp):
-        parser.add_argument("bigpack", metavar="<big pack>", help=halp)
-
     subparsers = parser.add_subparsers(metavar="COMMAND", required=True)
-    make_map = subparsers.add_parser(
-        'mkmap', help="create a default map file for 'split'",
+
+    def add_subcommand(name, function, help, description):
+        """A wrapper over subparser that is beautiful and expressive
+
+        It creates a subcommand using a subparser and returns an object with
+        an 'option' method that wraps subparser.add_argument().  option() also
+        returns the same object, allowing calls to be chained.  option() also
+        contains pre-made help text for inputpath, outputpath and bigpack.
+
+        It sure is unpythonic but makes things easier."""
+        subparser = subparsers.add_parser(name, help=help,
+                                          description=description)
+        subparser.set_defaults(func=function)
+
+        ret = types.SimpleNamespace()
+
+        def option(*optnames, **kw):
+            if optnames[0] in ("inputpath", "outputpath"):
+                kw.setdefault("metavar", "<%s dir or file>" % optnames[0][:-4])
+            elif optnames[0] == "bigpack":
+                kw.setdefault("metavar", "<big pack>")
+
+            subparser.add_argument(*optnames, **kw)
+            return ret
+
+        ret.option = option
+        return ret
+
+    (add_subcommand(
+        'mkmap', do_make_mapfile, help="create a default map file for 'split'",
         description="""Read a big packfile and write a map file
                        with sensible default values.  The map file can then
                        be customized manually afterward, or can be used
                        with split as-is.""")
-    add_bigpack(make_map, "pack file to use as a template to create the map")
-    make_map.add_argument("--prefix", default="", help="""prefix to use before
-                          packs.  e.g. if specifing mods/mymod/packs, then all
-                          small pack will be stored as a subdirectory of
-                          mods/mymod/packs/""")
-    make_map.set_defaults(func=do_make_mapfile)
+     .option("bigpack",
+             help="""pack file to use as a template to create the map""")
+     .option("--prefix", default="", help="""prefix to use before packs.
+             e.g. if specifing mods/mymod/packs, then all small pack will be
+             stored as a subdirectory of mods/mymod/packs/""")
+     )
 
-    split = subparsers.add_parser(
-        'split', help="split a big packfile into small ones",
+    (add_subcommand(
+        'split', do_split, help="split a big packfile into small ones",
         description="""Read a big packfile and a map file and
                        write several smaller packfile, controlled by the
                        map file""")
+     .option("output", metavar="<output dir>",
+             help="""where to write the smaller packs, according to the
+                    map file""")
+     .option("--strip", "-p", type=int, default=0,
+             help="""strip this amount of directories before writing to the
+             output. e.g. if the map file references mods/mymod/packs/a, then
+             --strip=2 will write it as packs/a in the output directory.""")
+     )
 
-    add_bigpack(split, "pack file to split")
-    add_stuffpath("output", split, metavar="<output dir>",
-                  help="""where to write the smaller packs, according to the
-                          map file""")
-    split.add_argument("--strip", "-p", type=int, default=0,
-                       help="""strip this amount of directories before writing
-                       to the output. e.g. if the map file references
-                       mods/mymod/packs/a, then --strip=2 will write it as
-                       packs/a in the output directory.""")
-    split.set_defaults(func=do_split)
-
-    merge = subparsers.add_parser(
-        'merge', help="merge several packfiles into a big one",
+    (add_subcommand(
+        'merge', do_merge, help="merge several packfiles into a big one",
         description="""Merge all packfiles in a directory into a
                        bigger one.""")
-    add_inputpath(merge, metavar="<input dir>",
-                  help="""Where to search for packfiles""")
-    add_bigpack(merge, """Where to write the big packfile""")
-    merge.add_argument("--allow-mismatch", dest="allow_mismatch",
-                       action="store_true", help="""If two input pack files
-                       possess different translation for the same string, then
-                       warn and pick the first encountered one.  The default is
-                       to abort in this case.""")
-    merge.set_defaults(func=do_merge)
+     .option('inputpath', metavar="<input dir>",
+             help="""Where to search for packfiles""")
+     .option('bigpack', help="""Where to write the big packfile""")
+     .option("--allow-mismatch", dest="allow_mismatch", action="store_true",
+             help="""If two input pack files possess different translation for
+             the same string, then warn and pick the first encountered one.
+             The default is to abort in this case.""")
+     )
 
-    difflang = subparsers.add_parser(
-        'difflang', help="Calculate differences between two lang files",
+    (add_subcommand(
+        'difflang', do_diff_langfile,
+        help="Calculate differences between two lang files",
         description="""Given two lang files, calculate the difference as
                        a pack file and write the output.  Lang files are
                        files that typically resides under the lang/
                        directory.""")
-    difflang.add_argument("--file-path",
-                          dest="filename", metavar="<path of original name",
-                          help="""Path to use to refer to the difference in the
-                          output. The default is to use 'lang/sc/<filename>'
-                          where filename is the name of <original file>""")
-    difflang.add_argument("fileorig", metavar="<original file>",
-                          help="""Original file to use as starting point""")
-    difflang.add_argument("filetrans", metavar="<translated file>",
-                          help="""Translated original file""")
-    difflang.add_argument("resultfile", metavar="<output file>",
-                          help="""Where to write the output.  If '-', then
-                                  output to the standard output""")
-    difflang.set_defaults(func=do_diff_langfile)
+     .option("--file-path", dest="filename", metavar="<path of original name",
+             help="""Path to use to refer to the difference in the output.
+             The default is to use 'lang/sc/<filename>' where filename is
+             the name of <original file>""")
+     .option("fileorig", metavar="<original file>",
+             help="""Original file to use as starting point""")
+     .option("filetrans", metavar="<translated file>",
+             help="""Translated original file""")
+     .option("resultfile", metavar="<output file>",
+             help="""Where to write the output.  If '-', then output to the
+             standard output""")
+     )
 
-    calcmigrate = subparsers.add_parser(
-        'calcmigration', help="Migrate pack files from a version to another",
+    (add_subcommand(
+        'calcmigration', do_calcmigrate,
+        help="Calculate a migration path from a version to another",
         description="""Given a source string cache and a destination string
                        cache, match source lang labels to destination lang
                        labels using a matching algorithm and write a migration
                        plan to apply later with 'migrate'.  This can be used
                        to updrade packs to the latest version of the game.""")
-    calcmigrate.add_argument("source_string_cache",
-                             metavar="<source string cache>",
-                             help="""string cache containing lang labels to
-                                     migrate from""")
-    calcmigrate.add_argument("dest_string_cache",
-                             metavar="<destination string cache>",
-                             help="""string cache containing lang labels to
-                                     migrate to""")
+     .option("source_string_cache", metavar="<source string cache>",
+             help="""string cache containing lang labels to migrate from""")
+     .option("dest_string_cache", metavar="<destination string cache>",
+             help="""string cache containing lang labels to migrate to""")
+     .option("migration_plan", metavar="<migration plan>",
+             help="""Where to write the migration plan in JSON format""")
+     .option("--no-file-move", dest="no_file_move", action="store_true",
+             help="""Do not match old lang labels into lang labels in a
+             different (game) file.""")
+     )
 
-    calcmigrate.add_argument("migration_plan", metavar="<migration plan>",
-                             help="""Where to write the migration plan in JSON
-                                     format""")
-    calcmigrate.add_argument("--no-file-move", dest="no_file_move",
-                             action="store_true",
-                             help="""Do not match old lang labels into lang
-                                     labels in a different (game) file.""")
-    calcmigrate.set_defaults(func=do_calcmigrate)
-
-    migrate = subparsers.add_parser(
-        'migrate', help="""Given a pack file or directory and a migration plan,
-                           migrate it and write a new pack file or
-                           directory""")
-    migrate.add_argument("migration_plan", metavar="<migration plan file>",
-                         help="""Migration plan JSON file as calculated by
-                                 'calcmigration'""")
-    add_inputpath(migrate, help="""pack file or directory to migrate from""")
-    add_outputpath(migrate, help="""Where to write migrated pack file(s)""")
-    migrate.set_defaults(func=do_migrate)
+    (add_subcommand(
+        'migrate', do_migrate, help="""Apply a migration path to packfiles""",
+        description="""Given a pack file or directory and a migration plan,
+                       migrate it and write a new pack file or directory.""")
+     .option("migration_plan", metavar="<migration plan file>",
+             help="Migration plan JSON file as calculated by 'calcmigration'")
+     .option("inputpath", help="""pack file or directory to migrate from""")
+     .option("outputpath", help="""Where to write migrated pack file(s)""")
+     )
 
     result = parser.parse_args()
     result.func(result)
