@@ -304,16 +304,22 @@ class MigrationCalculator:
 
         field_perfect = True
         field_score = 0
+        same_languid = False
         for key, value in src_langlabel.items():
             value = cls.strip_annotations(value)
             if not value or value == key:
                 continue
             if cls.strip_annotations(dest_langlabel.get(key)) == value:
                 field_score += cls.SAME_FIELD
+                if key == "langUid":
+                    same_languid = True
             else:
                 field_perfect = False
 
         if field_score == 0 and not field_perfect:
+            return 0
+        if base_score == 0 and same_languid and field_score == cls.SAME_FIELD:
+            # only matched by langUid... no.
             return 0
         if base_score == cls.SAME_FILE + cls.SAME_DICT_PATH and field_perfect:
             return cls.MAX_SCORE
