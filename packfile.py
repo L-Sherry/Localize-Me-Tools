@@ -651,7 +651,8 @@ def parse_args():
         description="""Read a big packfile and a map file and
                        write several smaller packfile, controlled by the
                        map file""")
-     .option("output", metavar="<output dir>",
+     .option("bigpack", help="pack file to split")
+     .option("outputpath", metavar="<output dir>",
              help="""where to write the smaller packs, according to the
                     map file""")
      .option("--strip", "-p", type=int, default=0,
