@@ -404,6 +404,35 @@ class Translator:
         self.readliner.prefill_text(prefill)
 
     @staticmethod
+    def worddiff(from_text, to_text, min_context_length = 30, min_suppr = 50):
+        # I'm not going to do an alignment algorithm, i'm not a geneticist
+
+        max_index = min(len(from_text), len(to_text))
+
+
+        common_start = 0
+        while common_start < max_index:
+            if from_text[common_start] != to_text[common_start]:
+                break
+            common_start += 1
+        common_end = 1
+        while common_start + common_end < max_index:
+            if from_text[-common_end] != to_text[-common_end]:
+                break
+            common_end += 1
+
+        if common_start + common_end < min_suppr:
+            return None, None
+        common_start = max(0, common_start - min_context_length // 2)
+        common_end = max(0, common_end - min_context_length // 2)
+
+        fmt = "%s%%s%s" % ("..." if common_start else "",
+                           "..." if common_end else "")
+        from_text = fmt % from_text[common_start : len(from_text) - common_end]
+        to_text = fmt % to_text[common_start : len(to_text) - common_end]
+        return from_text, to_text
+
+    @staticmethod
     def format_trans_to_show(filtered_lang_label, tags=None, real_known=None,
                              stale=None, orig=None, file_dict_path_str=None):
         string = ""
@@ -413,8 +442,11 @@ class Translator:
             string += "%s\n" % (" ".join(tags))
         if stale is not None:
             string += "stale translation:\n"
-            string += "our orig :%s\n" % (stale['orig'])
-            string += "our trans:%s\n" % (stale['text'])
+            if 'old_orig_diff' in stale:
+                string += "diff:%s\n--->:%s\n" % (stale['old_orig_diff'],
+                                                  stale['new_orig_diff'])
+            else:
+                string += "our orig :%s\n" % (stale['orig'])
         for locale, orig in filtered_lang_label.items():
             if orig is None:
                 string += 'NO %s\n' % locale
@@ -678,7 +710,11 @@ class Translator:
         real_known = stale = None
         if known and "text" in known:
             if "orig" in known and orig != known["orig"]:
-                stale = known
+                stale = known.copy()
+                from_diff, to_diff = self.worddiff(known["orig"], orig)
+                if from_diff is not None:
+                    stale['old_orig_diff'] = from_diff
+                    stale['new_orig_diff'] = to_diff
             else:
                 real_known = known
 
