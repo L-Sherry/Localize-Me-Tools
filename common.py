@@ -244,6 +244,32 @@ def walk_files(base_path, sort=True):
             rel_path = os.path.relpath(usable_path, base_path)
             yield usable_path, rel_path
 
+def walk_assets_files(assets_path, sort=True, path_filter=lambda x: True):
+    """Walk assets files that may contain texts.
+
+    This actually looks both in assets/data and assets/extension.
+
+    Yield (usable path, file_path) tuples, under the condition that
+    path_filter(file_path) is trueish.
+    usable_path can be used to open() the file, while file_path is a list of
+    relative path components.
+
+    Note that assets/data/extension and assets/extension are aliased."""
+
+    prefix = []
+    def iter_files():
+        nonlocal prefix
+        yield from walk_files(os.path.join(assets_path, "data"))
+        prefix = ["extension"]
+        yield from walk_files(os.path.join(assets_path, prefix[0]))
+
+    for usable_path, rel_path in iter_files():
+        file_path = prefix + rel_path.split(os.sep)
+        if not path_filter(file_path):
+            continue
+        yield usable_path, file_path
+
+
 def walk_assets_for_translatables(base_path, orig_lang,
                                   path_filter=lambda x: True):
     """Walk the game's assets and yield every lang label or fake lang-labels
@@ -276,6 +302,8 @@ def walk_assets_for_translatables(base_path, orig_lang,
     langfile_base = None
     langfile_file_path = None
     def collect_langfiles(base, lang, file_path, json):
+        # this assumes that files are sorted. i.e. languages from the same
+        # lang file are grouped.
         nonlocal langfiles
         nonlocal langfile_base
         nonlocal langfile_file_path
@@ -293,16 +321,15 @@ def walk_assets_for_translatables(base_path, orig_lang,
         if lang:
             langfiles[lang] = json
 
-    for usable_path, rel_path in walk_files(base_path):
-        file_path = rel_path.split(os.sep)
-        if not path_filter(file_path):
-            continue
+    for usable_path, file_path in walk_assets_files(base_path, True,
+                                                    path_filter):
         json = load_json(usable_path)
-        if rel_path.startswith("lang"):
-            sep_ind = rel_path.rfind('.', 0, -5)
+        if file_path[0] == "lang":
+            langfilename = file_path[-1]
+            sep_ind = langfilename.rfind('.', 0, -5)
             if sep_ind != -1 and "labels" in json:
-                yield from collect_langfiles(rel_path[:sep_ind],
-                                             rel_path[sep_ind+1:-5],
+                yield from collect_langfiles(langfilename[:sep_ind],
+                                             langfilename[sep_ind+1:-5],
                                              file_path, json["labels"])
             else:
                 print("Found lang file without lang in filename:", rel_path)
@@ -395,8 +422,15 @@ def get_assets_path(path):
         return path + ("%s.."%os.sep) * (len(realsplit) - index - 1)
 
 class sparse_dict_path_reader:
+    """Read specific translations given a path.
+
+    This is faster than iterating over all files and filtering for this
+    particular path.
+
+    This also caches the last read file, to speed things even further."""
     def __init__(self, gamepath, default_lang):
-        self.base_path = os.path.join(get_assets_path(gamepath), "data")
+        self.assets_path = get_assets_path(gamepath)
+        self.data_path = os.path.join(self.assets_path, "data")
         self.last_loaded = None
         self.last_data = None
         self.default_lang = default_lang
@@ -404,13 +438,22 @@ class sparse_dict_path_reader:
     def load_file(self, file_path):
         if self.last_loaded == file_path:
             return None
-        usable_path = os.path.join(self.base_path, os.sep.join(file_path))
-        try:
-            self.last_data = load_json(usable_path)
-        except Exception as ex:
-            print("Cannot find game file:", "/".join(file_path), ':', str(ex))
-            self.last_data = {}
+        def try_load(usable_path, default):
+            try:
+                self.last_data = load_json(usable_path)
+                return True
+            except Exception as ex:
+                self.last_data = {}
+                return False
+        file_path_str = os.sep.join(file_path)
         self.last_loaded = file_path
+        if try_load(os.path.join(self.data_path, file_path_str)):
+            return self.last_data
+
+        if file_path[0] == "extension":
+            if try_load(os.path.join(self.assets_path, file_path_str)):
+                return self.last_data
+        print("Cannot find game file:", file_path_str, ':', str(ex))
         return self.last_data
 
     def get_complete(self, file_path, dict_path):
@@ -610,14 +653,14 @@ class GameWalker:
     def __init__(self, game_dir=None, string_cache_path=None,
                  loaded_string_cache=None, from_locale="en_US"):
         self.string_cache = loaded_string_cache
-        self.data_dir = None
+        self.assets_dir = None
         self.file_path_filter = self.yes_filter
         self.dict_path_filter = self.yes_filter
         self.tags_filter = self.yes_filter
         self.custom_filter = lambda path, langlabel: True
         if loaded_string_cache is not None:
             return
-        elif string_cache_path and os.path.exists(string_cache_path):
+        if string_cache_path and os.path.exists(string_cache_path):
             try:
                 self.string_cache = string_cache(from_locale)
                 self.string_cache.load_from_file(string_cache_path)
@@ -628,7 +671,7 @@ class GameWalker:
         if game_dir is None:
             raise ValueError("No source configured or available")
         try:
-            self.data_dir = os.path.join(get_assets_path(game_dir), "data")
+            self.assets_dir = get_assets_path(game_dir)
         except:
             raise RuntimeError("cannot find any game data source")
 
@@ -654,7 +697,7 @@ class GameWalker:
             yield file_dict_path_str, langlabel, tags, info
 
     def walk_game_files(self, from_locale):
-        iterable = walk_assets_for_translatables(self.data_dir, from_locale,
+        iterable = walk_assets_for_translatables(self.assets_dir, from_locale,
                                                  self.file_path_filter)
         for langlabel, (file_path, dict_path), reverse_path in iterable:
             if not self.dict_path_filter(dict_path):
