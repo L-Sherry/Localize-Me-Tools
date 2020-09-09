@@ -80,6 +80,20 @@ class GrammalecteChecker(checker.PackChecker):
         self.all_spells = {}
         self.spell_count = 0
         self.grammar_count = 0
+
+    def lookup_var(self, name, warn_func, orig, get_text):
+        """Look up the given variable and return a replacement
+
+        this one specifically targets misc.localNum. to make it
+        grammalecte-friendly and delegate the rest to the super"""
+        if not name.startswith("misc.localNum."):
+            ret = super().lookup_var(name, warn_func, orig, get_text)
+            if ret == "(something)":
+                ret = "(quelque chose)"
+            return ret
+        num = int(name[len("misc.localNum."):])
+        return "{:,}".format(num).replace(",", "\xa0")
+
     def setup_dictionnary(self, dictionnary):
         if not dictionnary:
             return
