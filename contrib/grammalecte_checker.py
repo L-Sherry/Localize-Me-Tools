@@ -120,8 +120,8 @@ class GrammalecteChecker(checker.PackChecker):
             badword = spell['sValue']
             self.all_spells[badword] = 1 + self.all_spells.get(badword, 0)
 
-        res = grammalecte.text.generateParagraph(paragraph,
-                                                 grammar, spells, 72)
+        res, _ = grammalecte.text.generateParagraph(paragraph,
+                                                    grammar, spells, 72)
         warn_func("warn", "grammar error" if grammar else "spelling error",
                   str(res))
 
