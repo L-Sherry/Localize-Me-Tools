@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-Identifier: GPL-3.0-only
 
 import re
 import os
