@@ -204,11 +204,11 @@ class CheckerLexer(CheckerBase):
         parameters.
 
         >>> warn_func = lambda a,b: None
-        >>> match_var_params(["tmp", "#1"], ["map", "thingy"], warn_func):
+        >>> match_var_params(["tmp", "#1"], ["map", "thingy"], warn_func)
         None
-        >>> match_var_params(["tmp", "#1"], ["tmp", "something"], warn_func):
+        >>> match_var_params(["tmp", "#1"], ["tmp", "something"], warn_func)
         {"#1": "something"}
-        >>> match_var_params(["tmp", 0], ["tmp", "42"], warn_func):
+        >>> match_var_params(["tmp", 0], ["tmp", "42"], warn_func)
         {0: "42"}
         """
         split = actual
@@ -231,29 +231,30 @@ class CheckerLexer(CheckerBase):
                 return {}
         return params
 
-    def lookup_var(self, name, warn_func, orig, get_text):
-        """Look up the given variable and return a replacement
+    def lookup_var_ref(self, name, warn_func):
+        """Look up the given variable and return a file/dict path to its value.
 
-        the replacement may be bonkers.
+        This does not attempt to fetch the actual value.
 
-        get_text(file_path, dict_path, warn_func) should look up the given
-        reference.  It is used to replace variable references to known
-        texts.
-        """
+        This may return:
+        - A (file_path, dict_path) tuple if the variable is known and it
+          refers to a translatable.
+        - a string, if the variable is known but its text is fixed.
+        - None, if the variable is unknown.  This program cannot be expected
+          to known all variables."""
+
         normal_split = name.split('.')
 
         for template, file_path, dict_path_template in self.VARIABLES:
             params = self.match_var_params(template, normal_split, warn_func)
             if params is None:
                 continue
-            if not params:
-                # entry in VARIABLES has an error.
-                return None
+            assert params, "entry for %s is invalid" % repr(template)
 
             if callable(file_path):
                 return file_path(params, warn_func)
             if file_path is None:
-                return "(something)"
+                return None
 
             dict_path = []
             for component in dict_path_template:
@@ -262,7 +263,49 @@ class CheckerLexer(CheckerBase):
                     dict_path.append(subst.replace('/', '.'))
                 else:
                     dict_path.append(component)
+            return (file_path, dict_path)
 
+        return None
+
+    @staticmethod
+    def lax_contains(needle, haystack):
+
+        def simplify(text):
+            return text.lower().replace('-', ' ')
+
+        needle = simplify(needle)
+        haystack = simplify(haystack)
+        if needle in haystack:
+            return True
+
+        return all(word in haystack for word in needle.split())
+
+    def lookup_var_checked(self, name, warn_func, orig, get_text):
+        """Look up the given variable and return a replacement
+
+        This performs many checks along the way.  The replacement is allowed to
+        be very different from the actual text.
+
+        get_text(file_path, dict_path, warn_func) should look up the
+        translation for the given reference.  It is used to replace variable
+        references to known texts.
+        """
+
+        def exists_in_orig():
+            for maybevar in self.find_stuff_in_orig(orig, self.VARREF):
+                if maybevar == name:
+                    return True
+            return False
+
+        result = self.lookup_var_ref(name, warn_func)
+        if isinstance(result, str):
+            return result
+        if result is None:
+            if not exists_in_orig():
+                warn_func("warn", "unknown variable %s not in original" % name)
+            return "(something)"
+        if isinstance(result, tuple):
+            file_path, dict_path = result
             text = get_text(file_path, dict_path, warn_func)
             if text is None:
                 warn_func("error",
@@ -273,14 +316,18 @@ class CheckerLexer(CheckerBase):
                 warn_func("error",
                           "variable reference '%s' is not text" % name)
                 return "(invalid)"
+            if not exists_in_orig():
+                origvalue = self.sparse_reader.get(file_path, dict_path)
+                if not self.lax_contains(origvalue, orig):
+                    warn_func("notice", "variable reference %s is known (%s) "
+                              "but neither a reference nor its value (%s) "
+                              "were found in original text:" % (name, text,
+                                                                origvalue),
+                              orig)
+
             return text
-
-        for maybevar in self.find_stuff_in_orig(orig, self.VARREF):
-            if maybevar == name:
-                return "(something)"
-
-        warn_func("warn", "unknown variable %s not in original" % name)
-        return "(error)"
+        assert isinstance(result, str)
+        return result
 
     def parse_text(self, text, orig, warn_func, get_text):
         """yield (optional_ansi_prefix, text), caller must iterate"""
@@ -321,7 +368,8 @@ class CheckerLexer(CheckerBase):
                     warn_func("notice", "icon not present in original text")
                 yield ('', '@')
             elif type_ is self.VARREF:
-                value = self.lookup_var(value, warn_func, orig, get_text)
+                value = self.lookup_var_checked(value, warn_func, orig,
+                                                get_text)
                 yield ('', value)
             else:
                 assert False
