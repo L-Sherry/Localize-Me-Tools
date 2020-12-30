@@ -5,6 +5,7 @@
 import os
 import sys
 import types
+import functools
 import common
 
 
@@ -96,14 +97,22 @@ def get_sorter(args):
     This sort function takes one pack as parameter and returns another.
     The parameter may be modified and should not be used afterward.
     """
+
+    def sort_entries(next_func, pack):
+        """sort inside the entries, then use next_func"""
+        for k in list(pack.keys()):
+            pack[k] = common.sort_pack_entry(pack[k])
+        return next_func(pack)
+
     if args.sort_order == "none":
         return lambda pack: pack
     if args.sort_order == "alpha":
-        return common.sort_dict
+        return functools.partial(sort_entries, common.sort_dict)
     if args.sort_order == "game":
         walker = get_walker(args)
         from_locale = args.from_locale
-        return lambda pack: sort_by_game(walker, from_locale, pack)
+        game_sorter = functools.partial(sort_by_game, walker, from_locale)
+        return functools.partial(sort_entries, game_sorter)
 
     raise ValueError("Invalid sort order %s (allowed: none, alpha, game)"
                      % repr(args.sort_order))

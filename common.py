@@ -555,6 +555,13 @@ class string_cache:
             return None
         return ret["langlabel"].get(self.default_lang)
 
+def sort_pack_entry(entry):
+    """Sort the entry of a pack so that fields are in this order:
+    orig, text, quality, note, anythingelse(including partial)
+    """
+
+    order = {"orig":-4, "text":-3, "quality":-2, "note":-1}
+    return dict(sorted(entry.items(), key=lambda kv: order.get(kv[0], 0)))
 
 class PackFile:
     def __init__(self):
@@ -596,11 +603,13 @@ class PackFile:
                                    incomplete_entry):
         assert 'text' not in incomplete_entry
         incomplete_entry["orig"] = orig
+        incomplete_entry = sort_pack_entry(incomplete_entry)
         self.translations[dict_path_str] = incomplete_entry
         self.add_quality_stat(incomplete_entry)
 
     def add_translation(self, dict_path_str, orig, new_entry):
         new_entry["orig"] = orig
+        new_entry = sort_pack_entry(new_entry)
         if dict_path_str in self.translations:
             self.add_quality_stat(self.translations[dict_path_str], -1)
         self.translations[dict_path_str] = new_entry
