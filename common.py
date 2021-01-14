@@ -10,8 +10,12 @@ def load_json(path):
     """Load a json file given a path.
 
     Can raise both OSError and json.ValueError (extends ValueError)"""
-    with open(path, encoding="utf-8") as fd:
-        return json.load(fd)
+    try:
+        with open(path, encoding="utf-8") as fd:
+            return json.load(fd)
+    except:
+        print("Error while parsing %s:" % path, file=sys.stderr)
+        raise
 
 def save_json_to_fd(fd, value):
     """Save a readable json value into the given file descriptor."""
