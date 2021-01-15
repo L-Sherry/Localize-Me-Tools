@@ -1,9 +1,9 @@
 #!/bin/echo This file is not meant to be executable:
 
 import os
+import os.path
 import sys
 import json
-import os.path
 import tags as tagger
 
 def load_json(path):
@@ -185,7 +185,7 @@ def walk_langfile_json(json_dict, dict_path, reverse_path):
 
     'dict_path' is an list of indices, of type str or int, such as indexing
     json_dict[language] recursively with them yields 'subobject'.  If e.g.
-    'dict_path' is ["one", 2, "three"], then 
+    'dict_path' is ["one", 2, "three"], then
     'fake_lang_label[language] == json_dict[language]["one"][2]["three"]'.
     'reverse_path' is a list with the same size as 'dict_path', which contains
     fake parent objects. reverse_path[0] is always json_dict, and
@@ -263,9 +263,9 @@ def walk_assets_files(assets_path, sort=True, path_filter=lambda x: True):
     prefix = []
     def iter_files():
         nonlocal prefix
-        yield from walk_files(os.path.join(assets_path, "data"))
+        yield from walk_files(os.path.join(assets_path, "data"), sort)
         prefix = ["extension"]
-        yield from walk_files(os.path.join(assets_path, prefix[0]))
+        yield from walk_files(os.path.join(assets_path, prefix[0]), sort)
 
     for usable_path, rel_path in iter_files():
         file_path = prefix + rel_path.split(os.sep)
@@ -336,7 +336,8 @@ def walk_assets_for_translatables(base_path, orig_lang,
                                              langfilename[sep_ind+1:-5],
                                              file_path, json["labels"])
             else:
-                print("Found lang file without lang in filename:", rel_path)
+                print("Found lang file without lang in filename:",
+                      langfilename)
         else:
             yield from collect_langfiles(None, None, None, None)
             yield from add_file_path(file_path,
@@ -442,12 +443,15 @@ class sparse_dict_path_reader:
     def load_file(self, file_path):
         if self.last_loaded == file_path:
             return None
-        def try_load(usable_path, default):
+        last_fail = None
+        def try_load(usable_path):
+            nonlocal last_fail
             try:
                 self.last_data = load_json(usable_path)
                 return True
             except Exception as ex:
                 self.last_data = {}
+                last_fail = ex
                 return False
         file_path_str = os.sep.join(file_path)
         self.last_loaded = file_path
@@ -457,7 +461,7 @@ class sparse_dict_path_reader:
         if file_path[0] == "extension":
             if try_load(os.path.join(self.assets_path, file_path_str)):
                 return self.last_data
-        print("Cannot find game file:", file_path_str, ':', str(ex))
+        print("Cannot find game file:", file_path_str, ':', str(last_fail))
         return self.last_data
 
     def get_complete(self, file_path, dict_path):
@@ -681,7 +685,7 @@ class GameWalker:
                 self.string_cache.load_from_file(string_cache_path)
                 return
             except:
-                raise
+                pass
 
         if game_dir is None:
             raise ValueError("No source configured or available")
@@ -738,8 +742,7 @@ class GameWalker:
     def walk(self, from_locale, drain=True):
         if self.string_cache is not None:
             return self.walk_cache(drain)
-        else:
-            return self.walk_game_files(from_locale)
+        return self.walk_game_files(from_locale)
 
     def set_file_path_filter(self, array):
         self.file_path_filter = self.make_filter(array)
