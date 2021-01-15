@@ -2,6 +2,7 @@
 
 """Set of utilities to manipulate pack files.  Run --help for details."""
 
+import re
 import os
 import sys
 import types
@@ -581,6 +582,22 @@ def do_migrate(args):
         common.save_json(output_file, sorter(dst_pack))
 
 
+def do_filter(args):
+    """Filter a pack and write the result to another one"""
+    sorter = get_sorter(args)
+    walker = get_walker(args)
+
+    walker.set_file_path_filter(args.filter_file_path)
+    walker.set_dict_path_filter(args.filter_dict_path)
+    walker.set_tags_filter(args.filter_tags)
+    walker.set_orig_filter(args.filter_orig)
+
+    pack = common.load_json(args.inputpack)
+    new_pack = dict(walker.walk_pack(pack))
+    new_pack = sorter(new_pack)
+    common.save_json(args.outputpack, new_pack)
+
+
 def parse_args():
     """Parse the command line parameters"""
     import argparse
@@ -745,6 +762,36 @@ def parse_args():
              old version nor in the new version of the game.  By default, these
              strings are removed and a warning is logged.""")
      )
+
+    listoflist = re.compile(r'\s+').split
+
+    (add_subcommand(
+        'filter', do_filter, help="""Filter a packfile and write another""",
+        description="""Given a pack file, filter its entries and write the
+        result to another file.""")
+     .option("inputpack", metavar="<input pack file>")
+     .option("outputpack", metavar="<output pack file>")
+     .option("--filter-file-path", nargs="+",
+             dest="filter_file_path", type=listoflist,
+             metavar='<file/dir names>',
+             help="""filter the files or directories of the original json files.
+             The filter applies to any part of the relative path to the
+             considered file.""")
+     .option("--filter-dict-path", nargs="+",
+             dest="filter_dict_path", type=listoflist,
+             metavar='<json indexes>',
+             help="""filter the translations within json files to consider when
+             translating.
+             The filter applies to any part of the json index to the considered
+             text.""")
+     .option("--filter-tags", nargs="+", dest="filter_tags",
+             type=listoflist, metavar="<tag1 tag2...>",
+             help="""filter by tags.""")
+     .option("--filter-orig", nargs="+", dest="filter_orig",
+             type=listoflist, metavar="<tag1 tag2...>",
+             help="""filter entries whose original text contains the given
+             text.""")
+    )
 
     result = parser.parse_args()
     result.func(result)

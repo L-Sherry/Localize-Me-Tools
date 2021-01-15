@@ -690,6 +690,7 @@ class GameWalker:
         if game_dir is None:
             raise ValueError("No source configured or available")
         try:
+            self.game_dir = game_dir
             self.assets_dir = get_assets_path(game_dir)
         except:
             raise RuntimeError("cannot find any game data source")
@@ -743,6 +744,61 @@ class GameWalker:
         if self.string_cache is not None:
             return self.walk_cache(drain)
         return self.walk_game_files(from_locale)
+
+    def walk_pack(self, pack):
+        """Walk a pack file as if it was the game files.
+
+        This assumes that the pack isn't too degenerated:
+        - entries have an 'orig' field
+        - they are not stale
+
+        This yields file_dict_path_str and entries instead of yielding
+        langlabel, (file_path, dict_path), reverse_path_or_info
+        """
+
+        sparse_reader = self.string_cache
+        if sparse_reader is None:
+            sparse_reader = sparse_dict_path_reader(self.game_dir,
+                                                    self.from_locale)
+
+        def filter_tags_and_custom_full(file_dict_path_str):
+            complete = sparse_reader.get_complete_by_str(file_dict_path_str)
+            if not complete:
+                return None
+            langlabel, (file_path, dict_path), rev_path_or_info = complete
+            if self.tags_filter is not None:
+                if isinstance(rev_path_or_info,
+                              dict) and "tags" in rev_path_or_info:
+                    tags = rev_path_or_info["tags"].split(" ")
+                else:
+                    tags = tagger.find_tags(file_path, dict_path,
+                                            rev_path_or_info)
+                if not self.tags_filter(tags):
+                    return None
+            if not self.custom_filter(file_dict_path_str, langlabel):
+                return None
+
+            return file_path, dict_path
+
+        filter_tags_and_custom = filter_tags_and_custom_full
+
+        if (self.tags_filter is self.yes_filter
+                and self.custom_filter is self.yes_filter):
+            filter_tags_and_custom = split_file_dict_path
+
+        for file_dict_path_str, entry in pack.items():
+            file_path_dict_path = filter_tags_and_custom(file_dict_path_str)
+            if file_path_dict_path is None:
+                continue
+            file_path, dict_path = file_path_dict_path
+            if not self.file_path_filter(file_path):
+                continue
+            if not self.dict_path_filter(dict_path):
+                continue
+            if not self.orig_filter((entry.get('orig',''),)):
+                continue
+
+            yield file_dict_path_str, entry
 
     def set_file_path_filter(self, array):
         self.file_path_filter = self.make_filter(array)
