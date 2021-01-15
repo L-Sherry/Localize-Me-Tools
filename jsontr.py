@@ -138,6 +138,7 @@ class Configuration:
         "filter_dict_path": [],
         "filter_quality": [],
         "filter_tags": [],
+        "filter_orig": [],
         "ignore_known": True,
         "ignore_unknown": False,
         "allow_empty": False,
@@ -209,6 +210,16 @@ class Configuration:
                             --filter-tags "conv player" "xeno" will match
                             translations having both "conv" and "player" tags or
                             translations having the "xeno" tag""")
+        parser.add_argument("--filter-orig", nargs="+", dest="filter_orig",
+                            type=listoflist, metavar="<tag1 tag2...>",
+                            help="""filter the translations to only display
+                            translations whose original text contains the given
+                            text.  Follows the same convention as
+                            --filter-file-path and --filter-dict-path, so that
+                            --filter-orig "Hi" "Lea" will match
+                            translations having both "Hi" and "Lea" in the
+                            original text.  Only the locale specified by
+                            from_locale is searched""")
         parser.add_argument("--no-ignore-known", dest="ignore_known",
                             action="store_false", help="")
         parser.add_argument("--ignore-known", dest="ignore_known",
@@ -299,6 +310,7 @@ class Configuration:
         walker.set_file_path_filter(self.filter_file_path)
         walker.set_dict_path_filter(self.filter_dict_path)
         walker.set_tags_filter(self.filter_tags)
+        walker.set_orig_filter(self.filter_orig)
         walker.set_custom_filter(self.get_trans_known_filter(pack))
         return walker.walk(self.from_locale, drain=True)
 

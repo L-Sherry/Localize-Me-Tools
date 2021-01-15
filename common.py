@@ -670,7 +670,9 @@ class GameWalker:
         self.file_path_filter = self.yes_filter
         self.dict_path_filter = self.yes_filter
         self.tags_filter = self.yes_filter
+        self.orig_filter = self.yes_filter
         self.custom_filter = lambda path, langlabel: True
+        self.from_locale = from_locale
         if loaded_string_cache is not None:
             return
         if string_cache_path and os.path.exists(string_cache_path):
@@ -704,6 +706,9 @@ class GameWalker:
             if info is None:
                 continue
 
+            if not self.orig_filter((langlabel.get(self.from_locale, ""),)):
+                continue
+
             tags = extra["tags"].split()
             if not self.tags_filter(tags):
                 continue
@@ -719,6 +724,9 @@ class GameWalker:
             file_dict_path_str = serialize_dict_path(file_path, dict_path)
             info = self.custom_filter(file_dict_path_str, langlabel)
             if info is None:
+                continue
+
+            if not self.orig_filter(langlabel.get(self.from_locale, "")):
                 continue
 
             tags = tagger.find_tags(file_path, dict_path, reverse_path)
@@ -741,6 +749,9 @@ class GameWalker:
 
     def set_tags_filter(self, array):
         self.tags_filter = self.make_filter(array)
+
+    def set_orig_filter(self, array):
+        self.orig_filter = self.make_filter(array)
 
     def set_custom_filter(self, custom_filter):
         """set a custom filter.
