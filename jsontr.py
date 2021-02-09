@@ -768,7 +768,7 @@ def parse_args():
                                                  " of translated texts\n")
     parser.add_argument("--config-file", "-c", metavar="<config file>",
                         dest="config_file", default="config.json",
-                        help="""Location of the optional configuration file
+                        help="""Location of the optional configuration file.
                                 defaults to 'config.json'. The key of this
                                 file use the same name as the options,
                                 without the leading '--' and with '-'
@@ -781,6 +781,10 @@ def parse_args():
                                      description="""Find strings to translate
                                      then, for each of them, ask on the
                                      terminal for a translation.
+
+                                     It is possible to quit in the middle, the
+                                     program will save existing translations
+                                     and the next run will continue from there.
 
                                      It is possible to enter the following
                                      commands to tag the translation or perform
@@ -818,24 +822,100 @@ def parse_args():
                                      is available, and will complete to
                                      words in any of the shown original text
                                      or use compose characters.
+
+                                     When the text to translate is too long,
+                                     the ':split' command will attempt to split
+                                     it into sentences and only present one
+                                     sentence at a time.  Note that if more
+                                     than one language is displayed, then
+                                     :split will attempt to split sentences in
+                                     both texts using a very simplistic
+                                     heuristic.
                                      """)
 
     save_config = subparser.add_parser("saveconfig",
                                        help="""create a config file with
-                                       the options on the command line""")
+                                       the options on the command line.
+                                       The default location is config.json
+                                       but may be changed with --config-file""")
     save_config.set_defaults(save_config=True)
 
     count = subparser.add_parser("count", help="""Count the number of texts
                                  left to translate""",
                                  description="""Counts the number of texts
-                                 that matches the configured filters.""")
+                                 that matches the configured filters.
+                                 This is exactly the number of texts that
+                                 the 'continue' command would ask for.
+                                 """)
     count.set_defaults(count=True)
     count.add_argument("--debug", action="store_true",
                        help="""Enable various debugging output that may be
                                helpful to debug the lang label finder""")
 
     check = subparser.add_parser("check", help="""Check the translations for
-                                 various errors""")
+                                 various errors.
+
+                                 The following checks are implemented:
+                                 - detects stale translations where the
+                                   original text has changed.
+                                 - detects syntax error in \\v \\c and others
+                                   commands.  Also detects things like
+                                   duplicate colors, which mostly indicate a
+                                   mistake.
+                                 - detect most invalid variable references
+                                   (\\v) by implementing the main ones, and/or
+                                   checking if the original text have the same
+                                   references.
+                                 - Also check if a newly introduced variable
+                                   reference references text that is not part
+                                   of the original translation
+                                 - If character metrics are specified in the
+                                   configuration file, then it will also detect
+                                   overlong text that would overflow its box.
+                                   It reimplements the game rendering algorithm
+                                   with accuracy down to the pixel.  Not all
+                                   texts have annotated size information,
+                                   however.
+                                 - Can detect user-defined errors in the
+                                   translation using regex defined in the
+                                   configuration file.
+
+                                 Having a string_cache is strongly recommended
+                                 for best performance.  See save_cache for
+                                 details on how to create one.
+
+                                 Many checks requires information from
+                                 the config file.  config.json should have
+                                 a "check" property with an object with the
+                                 following properties (all optionals):
+
+                                 "badnesses": an object with arbitrary keys
+                                 whose values are parsed as regex.  If a
+                                 translation matches a regex, an error is
+                                 loggued.
+
+                                 "replacements": an array of 's/regex/repl/'
+                                 expressions, which are applied before most
+                                 checks take place.
+
+                                 "metrics": An object that contains font
+                                 metrics from the game (and possibly from
+                                 user-defined additional characters).
+                                 the "metrics" object must contains three
+                                 subobjects "normal", "small" and "tiny",
+                                 each of them may contain the "metrics" or
+                                 "extra_metrics" subsubobject. "metrics"
+                                 must be an array that can be extracted from
+                                 the game as follow:
+
+                                 sc.fontsystem[<font>].widthMap.map(x => x+1)
+
+                                 where <font> is "font", "smallFont" or
+                                 "tinyFont" for "normal", "small" and "tiny"
+                                 accordingly.  "extra_metrics" is another way
+                                 to define metrics where keys are characters
+                                 (or icon names) and values are widths.
+                                """)
     check.add_argument("--asset-path", dest="assetpath",
                        metavar="<file or directory>",
                        help="""Instead of checking the file specified by
@@ -844,19 +924,22 @@ def parse_args():
                        Not everything can be checked in this mode""")
     check.set_defaults(check=True)
 
-    get = subparser.add_parser("get", help="""Get text given their id""")
+    get = subparser.add_parser("get",
+                               help="""Get text given their id
+                               The format of the output is exactly the same
+                               as the one 'continue' uses.""")
     get.add_argument("file_dict_path",
                      help="A file dict path, e.g. 'hello/test.json/thing/4/t'")
 
     save_cache = subparser.add_parser("save_cache",
                                       help="""Browse the game file to look for
                                       strings and cache them into the file
-                                      specified by --string-cache-file, so that
+                                      specified by --string-cache-file
+                                      ("string_cache.json" by default), so that
                                       reading from them is faster later on.
-                                      Note that the filtering/ignoring options
-                                      will also affect the content of the cache
-                                      so the cache should be a super-set of the
-                                      filtering options that are used later on.
+                                      "string_cache.json" always contains every
+                                      information present from the game (this
+                                      command ignores filtering options).
                                       """)
     save_cache.set_defaults(save_cache=True)
 
