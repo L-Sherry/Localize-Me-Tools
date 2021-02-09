@@ -711,10 +711,11 @@ class PackChecker(Checker):
                 error = "translation is stale: does not exist anymore"
             elif orig is not None and true_orig != orig:
                 error = "translation is stale: original text differs"
+            elif orig is None:
+                orig = true_orig
 
             if error is not None:
                 self.print_error(file_dict_path_str, "warn", error, text)
-                continue
 
             if not text:
                 if "ciphertext" in trans:
@@ -725,8 +726,7 @@ class PackChecker(Checker):
                                      "entry has no translation", "")
                 continue
 
-            self.check_text(file_path, dict_path, text, true_orig, tags,
-                            get_text)
+            self.check_text(file_path, dict_path, text, orig, tags, get_text)
 
 
 def check_assets(sparse_reader, check_settings, assets_path, from_locale):
