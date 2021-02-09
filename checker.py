@@ -330,7 +330,7 @@ class CheckerLexer(CheckerBase):
         return result
 
     def parse_text(self, text, orig, warn_func, get_text):
-        """yield (optional_ansi_prefix, text), caller must iterate"""
+        """yield basic RenderedText objects.  Caller must iterate."""
         result = ""
         current_color = "0"
         # default speed depends on the context
@@ -338,7 +338,7 @@ class CheckerLexer(CheckerBase):
 
         for type_, value in self.lex_that_text(text, warn_func):
             if type_ is self.TEXT:
-                yield ("", value)
+                yield RenderedText.text(value)
             elif type_ is self.DELAY:
                 pass
             elif type_ is self.ESCAPE:
@@ -353,7 +353,7 @@ class CheckerLexer(CheckerBase):
                 current_color = value
                 ansi_color = self.colors.get(actual_color)
                 if ansi_color:
-                    yield (ansi_color, "")
+                    yield RenderedText.color(ansi_color)
             elif type_ is self.SPEED:
                 if len(value) != 1 or value not in "01234567":
                     warn_func("error", r"bad \s[] command")
@@ -366,11 +366,11 @@ class CheckerLexer(CheckerBase):
             elif type_ is self.ICON:
                 if value not in self.find_stuff_in_orig(orig, self.ICON):
                     warn_func("notice", "icon not present in original text")
-                yield ('', '@')
+                yield RenderedText.icon(value)
             elif type_ is self.VARREF:
                 value = self.lookup_var_checked(value, warn_func, orig,
                                                 get_text)
-                yield ('', value)
+                yield RenderedText.text(value)
             else:
                 assert False
         if current_color != "0":
@@ -378,30 +378,71 @@ class CheckerLexer(CheckerBase):
 
 
 class RenderedText:
+    ICON_PLACEHOLDER='@'
     """Class holding both 'rendered' text and plain text
 
     it may also contain stuff like the next space following the text
-    or the size of the text in pseudo-pixels"""
-    def __init__(self, plain="", ansi="", size=0, space=None):
+    or the size of the text in pseudo-pixels.  It may also contains minimal
+    information about icons"""
+    def __init__(self, plain="", ansi="", size=0, space=None, icons=()):
         # raw text without any ansi escape or var references.
         self.plain = plain
-        # rendered text with ansi escapes
+        # rendered text with ansi escapes and possible icons placeholders
         self.ansi = ansi
         # horizontal size once rendered
         self.size = size
-        # the space character that follows this text, or None
+        # the space character that follows this text, or None for no space.
         self.space = space
+        # contains a list of used icons
+        self.icons = list(icons)
 
     def add_plain_text(self, text):
         """add plain text, to both ansi and plain"""
         self.plain += text
         self.ansi += text
 
+    def append_rendered(self, rendered_text, space_size = 0):
+        """Append a rendered text to this rendered text.
+
+        If our space character is ' ', then space_size is added to the size"""
+        space = self.space if self.space is not None else ""
+        self.plain += space + rendered_text.plain
+        self.ansi += space + rendered_text.ansi
+        self.size += rendered_text.size + (space_size if space == ' ' else 0)
+        self.space = rendered_text.space
+        self.icons.extend(rendered_text.icons)
+
+    def chomp_last_char(self):
+        """Remove the last character from the RenderedText and return it
+
+        This may also chomp icons.
+        Chomping an empty RenderedText will raise IndexError"""
+        while self.ansi[-1] != self.plain[-1]:
+            if self.ansi.endswith(self.ICON_PLACEHOLDER):
+                self.icons.pop()
+                self.ansi = self.ansi[:-len(self.ICON_PLACEHOLDER)]
+                return self.ICON_PLACEHOLDER
+            self.ansi = self.ansi[:-1]
+        self.ansi = self.ansi[:-1]
+        ret = self.plain[-1]
+        self.plain = self.plain[:-1]
+        return ret
+
+    @classmethod
+    def text(cls, text):
+        return cls(text, text)
+
+    @classmethod
+    def color(cls, ansi):
+        return cls("", ansi)
+
+    @classmethod
+    def icon(cls, icon):
+        return cls("", cls.ICON_PLACEHOLDER, 0, None, (icon,))
+
     def __repr__(self):
-        return "RenderedText(%s,%s,%s,%s)" % (repr(self.plain),
-                                              repr(self.ansi),
-                                              repr(self.size),
-                                              repr(self.space))
+        return "RenderedText%s" % repr((self.plain, self.ansi,
+                                        self.size, self.space, self.icons))
 
 
 class Formatter:
@@ -418,26 +459,27 @@ class Formatter:
         return min(next_space, next_nl)
 
     @classmethod
-    def collect_words(cls):
+    def get_words(cls, iterable):
         """Collect blurbs of text and return words.
 
-        Send it (ansi_code, text) several time (it will yield None, so ignore
-        the result), send None to collect an array of RenderedText, one for
-        each word in the text.
+        Given an iterator over basic RenderedText
+        (i.e. RenderedText generated by
+        RenderedText.text(), RenderedText.icon(), or RenderedText.color()),
+        split it and return an array of RenderedText, one per word.
 
         word.space will contain the space that followed the word,
         or None for the last word.
         """
         words = []
-        current_word = RenderedText()
-        current_word.space = None
-        while True:
-            something = (yield None)
-            if something is None:
-                break
-            ansi, plaintext = something
-            current_word.ansi += ansi
+        current_word = RenderedText() # invariant: current_word.space is None
+        for basic_rendered_text in iterable:
 
+            if not basic_rendered_text.plain:
+                # icon or color
+                current_word.append_rendered(basic_rendered_text)
+                continue
+            # everything else is pure text
+            plaintext = basic_rendered_text.plain
             while plaintext:
                 next_space = cls.get_next_space_index(plaintext)
 
@@ -448,20 +490,9 @@ class Formatter:
                     current_word.space = plaintext[next_space]
                     words.append(current_word)
                     current_word = RenderedText()
-                    current_word.space = None
                 plaintext = plaintext[next_space+1:]
         words.append(current_word)
-        yield words
-
-    @classmethod
-    def get_words(cls, iterator):
-        """Adapt collect_word() to a normal function."""
-        word_collector = cls.collect_words()
-        # you need to go to the first yield before you send stuff to it.
-        next(word_collector)
-        for ansi, text in iterator:
-            word_collector.send((ansi, text))
-        return word_collector.send(None)
+        return words
 
     @staticmethod
     def wrap_text(words, width_limit, size_of_space):
@@ -477,23 +508,16 @@ class Formatter:
         attribute calculated from each word's size and size_of_space.
         """
         lines = []
-        current_line = RenderedText()
+        current_line = RenderedText() # invariant: current_line.space not '\n'
 
         for word in words:
-            has_space = bool(current_line.size)
-            newsize = (current_line.size + word.size
-                       + (size_of_space if has_space else 0))
-            if newsize > width_limit:
+            has_space = size_of_space if current_line.space == ' ' else 0
+            if current_line.size + word.size + has_space > width_limit:
                 lines.append(current_line)
                 current_line = RenderedText()
-                newsize = word.size
-            elif has_space:
-                current_line.add_plain_text(" ")
 
-            current_line.ansi += word.ansi
-            current_line.plain += word.plain
-            current_line.size = newsize
-            if word.space == '\n':
+            current_line.append_rendered(word, size_of_space)
+            if current_line.space == '\n':
                 lines.append(current_line)
                 current_line = RenderedText()
         lines.append(current_line)
@@ -549,14 +573,24 @@ class Checker(CheckerLexer):
                 raise ValueError("badness regex '%s' failed" % to_flag)
             self.to_flag.append((name, make_matcher(regex)))
 
-    def calc_string_size(self, string, metrics, warn_func):
+    def calc_renderedtext_size(self, rendered_text, metrics, warn_func):
+        """Calculate the size of a rendered text
+
+        The resulting size may be stored in its 'size' attribute, or may used
+        for other purposes."""
         ret = 0
-        for char in string:
-            size = metrics.get(char)
-            if size is None:
-                warn_func("warn", "Character %s has no metrics" % repr(char))
-                size = 1
-            ret += size
+
+        def iterate_stuff(iterable, warn_msg):
+            nonlocal ret
+            for item in iterable:
+                size = metrics.get(item)
+                if size is None:
+                    warn_func("warn", warn_msg % repr(item))
+                    size = 1
+                ret += size
+
+        iterate_stuff(rendered_text.plain, "Character %s has no metrics")
+        iterate_stuff(rendered_text.icons, "Icon %s has no metrics")
         return ret
 
     def wrap_text(self, words, metrics, boxtype):
@@ -580,20 +614,19 @@ class Checker(CheckerLexer):
         if maxsize > boxtype[2]:
             assert boxtype[2]
             # Figure out where the cut is
-            bigline = lines[maxindex].plain
-            indication = None
-            for charsize in range(len(bigline), 1, -1):
-                trimedsize = self.calc_string_size(bigline[:charsize], metrics,
+            bigline = lines[maxindex]
+            overful = ""
+            while bigline.plain:
+                overful = bigline.chomp_last_char() + overful
+                size = self.calc_renderedtext_size(bigline, metrics,
                                                    lambda *l: None)
-
-                if trimedsize < boxtype[2]:
-                    indication = bigline[:charsize] + '[]' + bigline[charsize:]
+                if size < boxtype[2]:
                     break
 
             warn_func("error",
                       "Overfull %s: %dpx too large" % (boxtype[1],
                                                        maxsize - boxtype[2]),
-                      indication)
+                      '%s[]%s' % (bigline.plain, overful))
 
     def do_text_replacements(self, text, warn_func):
         flagged = set()
@@ -631,7 +664,7 @@ class Checker(CheckerLexer):
 
         words = Formatter.get_words(generator)
         for word in words:
-            word.size = self.calc_string_size(word.plain, metrics, warn_func)
+            word.size = self.calc_renderedtext_size(word, metrics, warn_func)
         lines = self.wrap_text(words, metrics, boxtype)
         self.check_boxes(lines, boxtype, metrics, warn_func)
 
