@@ -70,10 +70,13 @@ def find_tags(file_path, dict_path, previous):
         return ["item", "item-%s"%dict_path[-1]]
     elif first_component == "lang" and dict_path[0] == 'labels':
         return find_tags_langfile(file_path, dict_path)
-
     elif first_component == "players" and file_path[1] == "lea.json":
         return ["players-lea-%s"%dict_path[-1]]
     else:
+        if (file_path[0] == "extension" and len(file_path) > 4
+                and file_path[2] == "data"):
+            file_path = file_path[3:]
+            first_component = file_path[0]
         tags.append("%s-%s"%(first_component, dict_path[-1]))
 
     if file_path[0] == "maps":
