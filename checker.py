@@ -694,13 +694,14 @@ class PackChecker(Checker):
         for file_dict_path_str, trans in pack.get_all().items():
             comp = self.sparse_reader.get_complete_by_str(file_dict_path_str)
             orig_langlabel, (file_path, dict_path), reverse_path = comp
-            if isinstance(reverse_path, dict) and "tags" in reverse_path:
-                tags = reverse_path["tags"].split(' ')
-            else:
-                tags = tagger.find_tags(file_path, dict_path, reverse_path)
 
             if orig_langlabel is None:
                 orig_langlabel = {}
+                tags = ("unknown",)
+            elif isinstance(reverse_path, dict) and "tags" in reverse_path:
+                tags = reverse_path["tags"].split(' ')
+            else:
+                tags = tagger.find_tags(file_path, dict_path, reverse_path)
 
             true_orig = orig_langlabel.get(self.sparse_reader.default_lang)
             orig = trans.get("orig")
