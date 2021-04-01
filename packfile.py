@@ -77,7 +77,7 @@ def sort_by_game(game_walker, from_locale, pack):
     output = iterate_game_and_pick_translations(packs_by_file, game_walker)
 
     # sort the remaining stales file_path, and add them
-    for file_path, stale_pack in common.sort_dict(packs_by_file):
+    for file_path, stale_pack in common.sort_dict(packs_by_file).items():
         print("note: sorting", len(stale_pack), "strings for nonexisting",
               "/".join(file_path))
         output.update(common.sort_dict(stale_pack))
