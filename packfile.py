@@ -153,17 +153,25 @@ def do_split(args):
 
     big_pack = common.load_json(args.bigpack)
     map_file = common.load_json(args.mapfile)
+    unused_map_files = set(map_file.keys())
     results = {}
+    missings = {}
     error = False
     for file_dict_path_str, trans in big_pack.items():
         file_path, _ = common.unserialize_dict_path(file_dict_path_str)
         file_path_str = "/".join(file_path)
         to_file_str = map_file.get(file_path_str)
         if to_file_str is None:
-            print("missing pack reference for", file_path_str)
-            error = True
+            missings[file_path_str] = missings.get(file_path_str, 0) + 1
+        else:
+            unused_map_files.discard(file_path_str)
 
         results.setdefault(to_file_str, {})[file_dict_path_str] = trans
+
+    for missing_file, count in missings.items():
+        error = True
+        print("missing pack reference for", missing_file,
+              "(%d occurences)" % count)
 
     if error:
         print("Aborting...")
@@ -181,6 +189,11 @@ def do_split(args):
         os.makedirs(actual_dir, exist_ok=True)
         smaller_pack = sorter(smaller_pack)
         common.save_json(os.path.join(actual_dir, to_file[-1]), smaller_pack)
+
+    if unused_map_files:
+        print(len(unused_map_files),
+              "keys where not used in the map file, e.g.:",
+              "\n".join(f for i,f in zip(range(10), unused_map_files)))
 
 
 def do_merge(args):
