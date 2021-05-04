@@ -171,8 +171,8 @@ class GrammalecteChecker(checker.PackChecker):
         warn_func = self.create_warn_function(file_path, dict_path, text)
 
         plain_text = ""
-        for _, text_chunk in self.parse_text(text, orig, warn_func, get_text):
-            plain_text += text_chunk
+        for rendered_text in self.parse_text(text, orig, warn_func, get_text):
+            plain_text += rendered_text.plain
 
         plain_text = self.do_all_replacements(plain_text, warn_func)
 
