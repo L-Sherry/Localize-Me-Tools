@@ -748,9 +748,9 @@ class GameWalker:
     def walk_pack(self, pack):
         """Walk a pack file as if it was the game files.
 
-        This assumes that the pack isn't too degenerated:
-        - entries have an 'orig' field
-        - they are not stale
+        This will fetch tags and langlabels from the directory or cache, but
+        if the pack contains stale entries, they will be walked as much as
+        possible.
 
         This yields file_dict_path_str and entries instead of yielding
         langlabel, (file_path, dict_path), reverse_path_or_info
@@ -770,9 +770,11 @@ class GameWalker:
                 if isinstance(rev_path_or_info,
                               dict) and "tags" in rev_path_or_info:
                     tags = rev_path_or_info["tags"].split(" ")
-                else:
+                elif isinstance(rev_path_or_info, list):
                     tags = tagger.find_tags(file_path, dict_path,
                                             rev_path_or_info)
+                else:
+                    tags = ()
                 if not self.tags_filter(tags):
                     return None
             if not self.custom_filter(file_dict_path_str, langlabel):
