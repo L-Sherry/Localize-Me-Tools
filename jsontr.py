@@ -145,7 +145,8 @@ class Configuration:
         "editor": os.getenv("EDITOR") or "",
         "packfile": "translations.pack.json",
         "total_count": 0,
-        "unique_count": 0
+        "unique_count": 0,
+        "history_size": 200
     }
 
     def add_options_to_argparser(self, parser):
@@ -251,7 +252,7 @@ class Configuration:
                             """)
         parser.set_defaults(ignore_unknown=None, ignore_known=None,
                             allow_empty=False, total_count=None,
-                            unique_count=None)
+                            unique_count=None, history_size=None)
     def update_with_argparse_result(self, result):
         for key in self.default_options.keys():
             value = getattr(result, key)
@@ -1030,7 +1031,7 @@ if __name__ == '__main__':
     pack = PackFile()
     readliner = Readliner()
     if os.path.exists(config.packfile) and not extra["check-asset-path"]:
-        history = CircularBuffer(100)
+        history = CircularBuffer(config.history_size)
         if readliner.has_history_support():
             add_to_history = history.append
         else:
